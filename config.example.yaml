@@ -1,0 +1,31 @@
+# Example configuration for Fronius Modbus to MQTT Bridge
+
+modbus:
+  # Fronius inverter IP address
+  host: "192.168.1.100"
+  # Modbus TCP port (default: 502)
+  port: 502
+  # Modbus unit ID (default: 1)
+  unit_id: 1
+  # Connection timeout in seconds
+  timeout: 10
+
+mqtt:
+  # MQTT broker address
+  broker: "192.168.1.50"
+  # MQTT broker port (default: 1883)
+  port: 1883
+  # MQTT username
+  username: "homeassistant"
+  # MQTT password
+  password: "secret"
+  # MQTT client ID (must be unique)
+  client_id: "fronius_bridge"
+  # Topic prefix for Home Assistant discovery
+  topic_prefix: "homeassistant"
+
+application:
+  # Polling interval in seconds
+  poll_interval: 5
+  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  log_level: "INFO"
