@@ -2,7 +2,7 @@
 
 Sends solar inverter DC data to Home Assistant via MQTT, for both solar arrays. This application reads extended MPPT (Maximum Power Point Tracking) data from the inverter using the Modbus protocol and publishes it to an MQTT broker with Home Assistant auto-discovery support. Although the native Fronius integration in Home Assistant works well, it doesn't seem to report this extended data offered by inverters that support the Sunspec API, with model 160 extension as is the case for Fronius Symo.
 
-![Dual MPPT Data in Home Assistant](./Dual%20MMPT%20Data%20in%20HA.png)
+![Dual MPPT Data in Home Assistant](./media/Dual%20MMPT%20Data%20in%20HA.png)
 
 *Example of dual MPPT data displayed in Home Assistant showing individual string voltages, currents, and power readings*
 

@@ -283,5 +283,3 @@ pids
 *.seed
 *.pid.lock
 
-# Kiro specs (development artifacts)
-.kiro/
