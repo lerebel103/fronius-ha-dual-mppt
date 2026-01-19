@@ -40,14 +40,49 @@ docker run -d \
 
 ## Requirements
 
-### Hardware Requirements
-- Fronius Symo solar inverter with Modbus TCP support
-- Network connectivity between the bridge and inverter
-- MQTT broker (typically Home Assistant)
+### Fronius Inverter Setup
+
+Before using this bridge, you must enable Modbus TCP on your Fronius inverter through the web interface:
+
+#### Enabling Modbus TCP
+1. **Access the Fronius web interface**:
+   - Navigate to your inverter's IP address in a web browser
+   - Default URL format: `http://192.168.1.XXX` (find IP in your router's DHCP client list)
+
+2. **Login with service credentials**:
+   - **Username**: `service`
+   - **Password**: Your inverter's **service user password**
+   - ⚠️ **Important**: This is NOT the customer password. The service password is typically found on a sticker inside the inverter or in the installation documentation
+
+3. **Navigate to Communication settings**:
+   - Go to **Settings** → **Communication** → **Modbus**
+   - Or look for **Interface** → **Modbus TCP**
+
+4. **Enable Modbus TCP**:
+   - Set **Modbus TCP** to **Enabled**
+   - Verify **Port** is set to `502` (default)
+   - Set **Unit ID** to `1` (default)
+   - **Save** the configuration
+
+5. **Verify SunSpec Model 160 support**:
+   - The bridge requires **SunSpec Model 160** (Multiple MPPT Inverter Extension)
+   - Most Fronius Symo inverters support this model
+   - The bridge will verify Model 160 availability during startup
+
+#### Finding Your Service Password
+The service user password is required to access advanced inverter settings:
+
+- **Physical label**: Check for a sticker inside the inverter housing (may require opening the front panel)
+- **Installation documentation**: Look in the original installation paperwork
+- **Installer contact**: Contact your solar installer if you cannot locate the password
+- **Fronius support**: Contact Fronius technical support with your inverter serial number
+
+**Note**: The service password is different from the customer/user password and provides access to communication and advanced configuration settings.
 
 ### Software Requirements
 - Python 3.9+ (for development)
 - Docker and docker-compose (for deployment)
+- MQTT broker (typically Home Assistant)
 - Fronius inverter must support SunSpec Model 160 (Multiple MPPT Inverter Extension)
 
 ## Quick Start with Docker
@@ -238,6 +273,14 @@ Replace `<serial>` with your inverter's serial number.
 
 The bridge provides comprehensive diagnostic monitoring capabilities through additional sensors that expose detailed health and operational information for each MPPT module.
 
+⚠️ **Important Compatibility Note**: While these diagnostic sensors are part of the SunSpec Model 160 specification, **not all Fronius inverter models implement all diagnostic fields**. Based on testing:
+
+- **Operating State sensors**: ✅ **Supported** on most Fronius Symo models
+- **Temperature sensors**: ❌ **Not supported** on many Fronius Symo models (may work on newer models or other Fronius product lines)
+- **Module Events sensors**: ❌ **Not supported** on many Fronius Symo models (may work on newer models or other Fronius product lines)
+
+The bridge will gracefully handle unavailable diagnostic fields - core MPPT monitoring will continue to work normally, and unsupported diagnostic sensors will show as "unavailable" in Home Assistant.
+
 ### Available Diagnostic Sensors
 
 #### Temperature Sensors
@@ -245,6 +288,7 @@ The bridge provides comprehensive diagnostic monitoring capabilities through add
 - **Unit**: Celsius (°C)
 - **Default State**: Disabled by default (can be enabled in Home Assistant)
 - **Device Class**: Temperature
+- **Compatibility**: ⚠️ May not be supported on all Fronius Symo models
 - **Example**: `MPPT1 Temperature`, `MPPT2 Temperature`
 
 #### Operating State Sensors  
@@ -252,12 +296,14 @@ The bridge provides comprehensive diagnostic monitoring capabilities through add
 - **Values**: OFF, SLEEPING, STARTING, MPPT, THROTTLED, SHUTTING_DOWN, FAULT, STANDBY, TEST, RESERVED_10
 - **Default State**: Enabled by default
 - **Device Class**: Enum
+- **Compatibility**: ✅ Supported on most Fronius Symo models
 - **Example**: `MPPT1 Operating State`, `MPPT2 Operating State`
 
 #### Module Events Sensors
 - **Purpose**: Show active fault and event conditions for each MPPT module
 - **Values**: Comma-separated list of active events or "No active events"
 - **Default State**: Disabled by default (can be enabled in Home Assistant)
+- **Compatibility**: ⚠️ May not be supported on all Fronius Symo models
 - **Events Include**: GROUND_FAULT, INPUT_OVER_VOLTAGE, DC_DISCONNECT, CABINET_OPEN, MANUAL_SHUTDOWN, OVER_TEMP, BLOWN_FUSE, UNDER_TEMP, MEMORY_LOSS, ARC_DETECTION, TEST_FAILED, INPUT_UNDER_VOLTAGE, INPUT_OVER_CURRENT
 - **Example**: `MPPT1 Module Events`, `MPPT2 Module Events`
 
@@ -449,16 +495,18 @@ fronius-ha-dual-mppt/
    - Restart Home Assistant after first discovery
 
 5. **Diagnostic sensors showing "unavailable"**
+   - This is normal for many Fronius Symo models - temperature and module events sensors are often not supported
    - Verify your inverter supports SunSpec Model 160 diagnostic fields (Tmp, DCSt, DCEvt)
    - Check that core MPPT sensors are working (diagnostic sensors depend on same Model 160 data)
    - Enable debug logging to see diagnostic field reading attempts
-   - Some older inverter firmware versions may not support all diagnostic fields
+   - Operating State sensors are more likely to be supported than Temperature or Module Events
 
 6. **Diagnostic sensors not created**
    - Ensure `diagnostic_sensors.enabled: true` in configuration
    - Check individual sensor type settings (temperature, operating_state, module_events)
    - Restart the bridge application after configuration changes
    - Review application logs for diagnostic sensor creation errors
+   - Consider disabling unsupported sensor types (temperature, module_events) if they're not available on your inverter model
 
 ### Debug Mode
 
@@ -491,15 +539,15 @@ This bridge specifically requires **SunSpec Model 160** (Multiple MPPT Inverter 
 - Total DC power output
 
 **Diagnostic Data** (when available):
-- MPPT module temperature readings (Tmp field)
-- Operating state information (DCSt field) 
-- Module event and fault conditions (DCEvt field)
+- MPPT module temperature readings (Tmp field) - ⚠️ Limited support on Fronius Symo models
+- Operating state information (DCSt field) - ✅ Supported on most Fronius models
+- Module event and fault conditions (DCEvt field) - ⚠️ Limited support on Fronius Symo models
 
-The diagnostic features require inverters with full Model 160 implementation including the optional diagnostic fields. Core MPPT monitoring will work even if diagnostic fields are not available.
+The diagnostic features require inverters with full Model 160 implementation including the optional diagnostic fields. Core MPPT monitoring will work even if diagnostic fields are not available. **Many Fronius Symo models only support Operating State sensors**, while Temperature and Module Events sensors may show as "unavailable".
 
 ### Supported Fronius Models
 
-Most Fronius Symo inverters support Model 160, including:
+Most Fronius Symo inverters support SunSpec Model 160 for core MPPT data, including:
 - Fronius Symo 3.0-3-M
 - Fronius Symo 4.5-3-M
 - Fronius Symo 5.0-3-M
@@ -510,6 +558,14 @@ Most Fronius Symo inverters support Model 160, including:
 - Fronius Symo 15.0-3-M
 - Fronius Symo 17.5-3-M
 - Fronius Symo 20.0-3-M
+
+**Diagnostic Sensor Compatibility**:
+- **Core MPPT data** (voltage, current, power): ✅ Supported on all listed models
+- **Operating State sensors**: ✅ Supported on most models
+- **Temperature sensors**: ⚠️ Limited support - may not be available on many Symo models
+- **Module Events sensors**: ⚠️ Limited support - may not be available on many Symo models
+
+**Note**: Diagnostic sensor availability may vary by firmware version and specific model variant. The bridge will automatically detect and gracefully handle unavailable diagnostic fields without affecting core MPPT monitoring functionality.
 
 ### Verifying Model 160 Support
 
