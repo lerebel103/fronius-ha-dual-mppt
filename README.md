@@ -29,7 +29,7 @@ docker run -d \
 
 ## Features
 
-- **SunSpec Model 160 Support**: Reads detailed MPPT data from Fronius Symo inverters
+- **SunSpec Model 160 Support**: Reads detailed MPPT data from Fronius Symo inverters, for both PV Arrays
 - **Diagnostic Sensors**: Temperature, operating state, and module events monitoring for each MPPT channel
 - **Home Assistant Integration**: Automatic sensor discovery via MQTT with proper diagnostic entity categories
 - **Resilient Operation**: Automatic reconnection handling for both Modbus and MQTT
