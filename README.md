@@ -30,7 +30,8 @@ docker run -d \
 ## Features
 
 - **SunSpec Model 160 Support**: Reads detailed MPPT data from Fronius Symo inverters
-- **Home Assistant Integration**: Automatic sensor discovery via MQTT
+- **Diagnostic Sensors**: Temperature, operating state, and module events monitoring for each MPPT channel
+- **Home Assistant Integration**: Automatic sensor discovery via MQTT with proper diagnostic entity categories
 - **Resilient Operation**: Automatic reconnection handling for both Modbus and MQTT
 - **Docker Support**: Containerized deployment with docker-compose
 - **Comprehensive Monitoring**: Voltage, current, and power data for both MPPT channels
@@ -87,7 +88,7 @@ docker run -d \
 
 ### Configuration File Format
 
-The application uses a YAML configuration file with three main sections:
+The application uses a YAML configuration file with four main sections:
 
 ```yaml
 modbus:
@@ -107,6 +108,18 @@ mqtt:
 application:
   poll_interval: 5            # Polling interval in seconds
   log_level: "INFO"          # Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+
+diagnostic_sensors:           # Optional diagnostic sensor configuration
+  enabled: true               # Global enable/disable for diagnostic sensors
+  temperature:
+    enabled: true             # Enable temperature sensors
+    enabled_by_default: false # Temperature sensors disabled by default in HA
+  operating_state:
+    enabled: true             # Enable operating state sensors
+    enabled_by_default: true  # Operating state sensors enabled by default in HA
+  module_events:
+    enabled: true             # Enable module events sensors
+    enabled_by_default: false # Module events sensors disabled by default in HA
 ```
 
 ### Finding Your Inverter IP Address
@@ -158,6 +171,7 @@ This bridge requires an MQTT broker to communicate with Home Assistant. The most
 
 The bridge automatically creates the following sensors in Home Assistant:
 
+**Core MPPT Sensors** (always enabled):
 - **PV1 Voltage** (V)
 - **PV1 Current** (A)  
 - **PV1 Power** (W)
@@ -166,6 +180,16 @@ The bridge automatically creates the following sensors in Home Assistant:
 - **PV2 Power** (W)
 - **Total DC Power** (W)
 
+**Diagnostic Sensors** (configurable):
+- **MPPT1 Temperature** (°C) - *disabled by default*
+- **MPPT1 Operating State** - *enabled by default*
+- **MPPT1 Module Events** - *disabled by default*
+- **MPPT2 Temperature** (°C) - *disabled by default*
+- **MPPT2 Operating State** - *enabled by default*
+- **MPPT2 Module Events** - *disabled by default*
+
+All sensors are automatically grouped under a single device in Home Assistant using your inverter's serial number as the device identifier.
+
 ### Manual Configuration (if needed)
 
 If auto-discovery doesn't work, add these sensors to your `configuration.yaml`:
@@ -173,6 +197,7 @@ If auto-discovery doesn't work, add these sensors to your `configuration.yaml`:
 ```yaml
 mqtt:
   sensor:
+    # Core MPPT Sensors
     - name: "PV1 Voltage"
       state_topic: "homeassistant/sensor/fronius_<serial>/pv1_voltage/state"
       unit_of_measurement: "V"
@@ -185,10 +210,152 @@ mqtt:
       device_class: "current"
       value_template: "{{ value_json.current }}"
     
-    # ... (repeat for other sensors)
+    # Diagnostic Sensors (optional)
+    - name: "MPPT1 Temperature"
+      state_topic: "homeassistant/sensor/fronius_<serial>/mppt1_temperature/state"
+      unit_of_measurement: "°C"
+      device_class: "temperature"
+      entity_category: "diagnostic"
+      value_template: "{{ value_json.temperature }}"
+    
+    - name: "MPPT1 Operating State"
+      state_topic: "homeassistant/sensor/fronius_<serial>/mppt1_operating_state/state"
+      device_class: "enum"
+      entity_category: "diagnostic"
+      value_template: "{{ value_json.state }}"
+    
+    - name: "MPPT1 Module Events"
+      state_topic: "homeassistant/sensor/fronius_<serial>/mppt1_module_events/state"
+      entity_category: "diagnostic"
+      value_template: "{{ value_json.events }}"
+    
+    # ... (repeat for MPPT2 and other sensors)
 ```
 
 Replace `<serial>` with your inverter's serial number.
+
+## Diagnostic Sensors
+
+The bridge provides comprehensive diagnostic monitoring capabilities through additional sensors that expose detailed health and operational information for each MPPT module.
+
+### Available Diagnostic Sensors
+
+#### Temperature Sensors
+- **Purpose**: Monitor MPPT module temperatures to detect overheating conditions
+- **Unit**: Celsius (°C)
+- **Default State**: Disabled by default (can be enabled in Home Assistant)
+- **Device Class**: Temperature
+- **Example**: `MPPT1 Temperature`, `MPPT2 Temperature`
+
+#### Operating State Sensors  
+- **Purpose**: Display current operational mode of each MPPT module
+- **Values**: OFF, SLEEPING, STARTING, MPPT, THROTTLED, SHUTTING_DOWN, FAULT, STANDBY, TEST, RESERVED_10
+- **Default State**: Enabled by default
+- **Device Class**: Enum
+- **Example**: `MPPT1 Operating State`, `MPPT2 Operating State`
+
+#### Module Events Sensors
+- **Purpose**: Show active fault and event conditions for each MPPT module
+- **Values**: Comma-separated list of active events or "No active events"
+- **Default State**: Disabled by default (can be enabled in Home Assistant)
+- **Events Include**: GROUND_FAULT, INPUT_OVER_VOLTAGE, DC_DISCONNECT, CABINET_OPEN, MANUAL_SHUTDOWN, OVER_TEMP, BLOWN_FUSE, UNDER_TEMP, MEMORY_LOSS, ARC_DETECTION, TEST_FAILED, INPUT_UNDER_VOLTAGE, INPUT_OVER_CURRENT
+- **Example**: `MPPT1 Module Events`, `MPPT2 Module Events`
+
+### Diagnostic Sensor Configuration
+
+Diagnostic sensors can be configured globally or per sensor type:
+
+```yaml
+diagnostic_sensors:
+  enabled: true                 # Master switch for all diagnostic sensors
+  temperature:
+    enabled: true               # Enable/disable temperature sensors
+    enabled_by_default: false   # Default visibility in Home Assistant
+  operating_state:
+    enabled: true               # Enable/disable operating state sensors  
+    enabled_by_default: true    # Default visibility in Home Assistant
+  module_events:
+    enabled: true               # Enable/disable module events sensors
+    enabled_by_default: false   # Default visibility in Home Assistant
+```
+
+**Configuration Options**:
+- `enabled: false` - Completely disables sensor type (not created in Home Assistant)
+- `enabled_by_default: false` - Creates sensors but disables them by default in Home Assistant
+- `enabled_by_default: true` - Creates sensors and enables them by default in Home Assistant
+
+### Enabling Diagnostic Sensors in Home Assistant
+
+Diagnostic sensors marked as disabled by default can be enabled through the Home Assistant interface:
+
+1. **Navigate to Settings** → **Devices & Services**
+2. **Find your Fronius device** (search for your inverter serial number)
+3. **Click on the device** to view all entities
+4. **Enable desired diagnostic sensors**:
+   - Look for entities with names like "MPPT1 Temperature" or "MPPT2 Module Events"
+   - Click the toggle switch to enable disabled sensors
+   - Enabled sensors will start showing data immediately
+
+### Diagnostic Sensor Examples
+
+#### Normal Operation
+```
+MPPT1 Operating State: MPPT
+MPPT1 Temperature: 45.2°C
+MPPT1 Module Events: No active events
+
+MPPT2 Operating State: MPPT  
+MPPT2 Temperature: 43.8°C
+MPPT2 Module Events: No active events
+```
+
+#### Fault Conditions
+```
+MPPT1 Operating State: FAULT
+MPPT1 Temperature: 78.5°C
+MPPT1 Module Events: OVER_TEMP, INPUT_OVER_VOLTAGE
+
+MPPT2 Operating State: THROTTLED
+MPPT2 Temperature: 52.1°C
+MPPT2 Module Events: No active events
+```
+
+#### Startup/Shutdown
+```
+MPPT1 Operating State: STARTING
+MPPT1 Temperature: 25.3°C
+MPPT1 Module Events: No active events
+
+MPPT2 Operating State: SLEEPING
+MPPT2 Temperature: 24.8°C
+MPPT2 Module Events: No active events
+```
+
+### Diagnostic Sensor Benefits
+
+- **Proactive Monitoring**: Detect issues before they affect power production
+- **Performance Optimization**: Identify thermal throttling and optimization opportunities
+- **Maintenance Planning**: Schedule maintenance based on actual operating conditions
+- **Fault Diagnosis**: Quickly identify and troubleshoot system problems
+- **Historical Analysis**: Track long-term trends in module health and performance
+
+### Troubleshooting Diagnostic Sensors
+
+**Diagnostic sensors showing "unavailable"**:
+- Check that your Fronius inverter supports SunSpec Model 160 diagnostic fields
+- Verify Modbus connectivity is working (core MPPT sensors should be functional)
+- Enable debug logging to see detailed diagnostic field reading attempts
+
+**Diagnostic sensors not appearing**:
+- Ensure `diagnostic_sensors.enabled: true` in your configuration
+- Check individual sensor type enabled settings
+- Restart the bridge application after configuration changes
+- Look for diagnostic sensor creation errors in the application logs
+
+**Temperature sensors showing unrealistic values**:
+- Values outside -40°C to 150°C range are automatically marked as unavailable
+- Check inverter firmware version - older versions may not support temperature readings
+- Verify proper scaling is applied (should be in Celsius, not raw register values)
 
 ## Development Setup
 
@@ -281,6 +448,18 @@ fronius-ha-dual-mppt/
    - Verify topic_prefix matches Home Assistant configuration
    - Restart Home Assistant after first discovery
 
+5. **Diagnostic sensors showing "unavailable"**
+   - Verify your inverter supports SunSpec Model 160 diagnostic fields (Tmp, DCSt, DCEvt)
+   - Check that core MPPT sensors are working (diagnostic sensors depend on same Model 160 data)
+   - Enable debug logging to see diagnostic field reading attempts
+   - Some older inverter firmware versions may not support all diagnostic fields
+
+6. **Diagnostic sensors not created**
+   - Ensure `diagnostic_sensors.enabled: true` in configuration
+   - Check individual sensor type settings (temperature, operating_state, module_events)
+   - Restart the bridge application after configuration changes
+   - Review application logs for diagnostic sensor creation errors
+
 ### Debug Mode
 
 Enable debug logging for detailed troubleshooting:
@@ -305,10 +484,18 @@ telnet <inverter-ip> 502
 
 This bridge specifically requires **SunSpec Model 160** (Multiple MPPT Inverter Extension) support. This model provides:
 
+**Core MPPT Data**:
 - Individual MPPT channel voltage readings
 - Individual MPPT channel current readings  
 - Individual MPPT channel power readings
 - Total DC power output
+
+**Diagnostic Data** (when available):
+- MPPT module temperature readings (Tmp field)
+- Operating state information (DCSt field) 
+- Module event and fault conditions (DCEvt field)
+
+The diagnostic features require inverters with full Model 160 implementation including the optional diagnostic fields. Core MPPT monitoring will work even if diagnostic fields are not available.
 
 ### Supported Fronius Models
 

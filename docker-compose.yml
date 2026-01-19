@@ -1,7 +1,7 @@
 services:
   fronius-bridge:
     build: .
-    image: lerebel103/fronius-ha-dual-mppt:latest
+    image: fronius-ha-dual-mppt:latest
     container_name: fronius-ha-dual-mppt
     restart: unless-stopped
     

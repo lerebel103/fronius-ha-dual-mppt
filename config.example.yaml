@@ -27,5 +27,37 @@ mqtt:
 application:
   # Polling interval in seconds
   poll_interval: 5
-  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
-  log_level: "INFO"
+  # MQTT republish rate in seconds
+  mqtt_republish_rate: 300
+  # Logging configuration
+  logging:
+    # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+    level: "INFO"
+    # Log format string
+    format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Diagnostic sensors configuration (optional)
+diagnostic_sensors:
+  # Global enable/disable for all diagnostic sensors
+  enabled: true
+  
+  # Temperature sensors configuration
+  temperature:
+    # Enable temperature sensors
+    enabled: true
+    # Whether temperature sensors are enabled by default in Home Assistant
+    enabled_by_default: false
+  
+  # Operating state sensors configuration
+  operating_state:
+    # Enable operating state sensors
+    enabled: true
+    # Whether operating state sensors are enabled by default in Home Assistant
+    enabled_by_default: true
+  
+  # Module events sensors configuration
+  module_events:
+    # Enable module events sensors
+    enabled: true
+    # Whether module events sensors are enabled by default in Home Assistant
+    enabled_by_default: false

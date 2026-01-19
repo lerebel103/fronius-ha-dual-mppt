@@ -71,6 +71,11 @@ class Config:
             application = self._config["application"]
             errors.extend(self._validate_application(application))
 
+        # Validate Diagnostic Sensors section (optional)
+        if "diagnostic_sensors" in self._config:
+            diagnostic_sensors = self._config["diagnostic_sensors"]
+            errors.extend(self._validate_diagnostic_sensors(diagnostic_sensors))
+
         if errors:
             raise ConfigValidationError(
                 "Configuration validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
@@ -214,6 +219,50 @@ class Config:
 
         return errors
 
+    def _validate_diagnostic_sensors(self, diagnostic_sensors: Dict[str, Any]) -> List[str]:
+        """Validate Diagnostic Sensors configuration section."""
+        errors: List[str] = []
+
+        # Validate global enabled flag
+        if "enabled" in diagnostic_sensors:
+            if not isinstance(diagnostic_sensors["enabled"], bool):
+                errors.append("diagnostic_sensors.enabled must be a boolean")
+
+        # Validate temperature sensor configuration
+        if "temperature" in diagnostic_sensors:
+            temp_config = diagnostic_sensors["temperature"]
+            if not isinstance(temp_config, dict):
+                errors.append("diagnostic_sensors.temperature must be a dictionary")
+            else:
+                if "enabled" in temp_config and not isinstance(temp_config["enabled"], bool):
+                    errors.append("diagnostic_sensors.temperature.enabled must be a boolean")
+                if "enabled_by_default" in temp_config and not isinstance(temp_config["enabled_by_default"], bool):
+                    errors.append("diagnostic_sensors.temperature.enabled_by_default must be a boolean")
+
+        # Validate operating state sensor configuration
+        if "operating_state" in diagnostic_sensors:
+            state_config = diagnostic_sensors["operating_state"]
+            if not isinstance(state_config, dict):
+                errors.append("diagnostic_sensors.operating_state must be a dictionary")
+            else:
+                if "enabled" in state_config and not isinstance(state_config["enabled"], bool):
+                    errors.append("diagnostic_sensors.operating_state.enabled must be a boolean")
+                if "enabled_by_default" in state_config and not isinstance(state_config["enabled_by_default"], bool):
+                    errors.append("diagnostic_sensors.operating_state.enabled_by_default must be a boolean")
+
+        # Validate module events sensor configuration
+        if "module_events" in diagnostic_sensors:
+            events_config = diagnostic_sensors["module_events"]
+            if not isinstance(events_config, dict):
+                errors.append("diagnostic_sensors.module_events must be a dictionary")
+            else:
+                if "enabled" in events_config and not isinstance(events_config["enabled"], bool):
+                    errors.append("diagnostic_sensors.module_events.enabled must be a boolean")
+                if "enabled_by_default" in events_config and not isinstance(events_config["enabled_by_default"], bool):
+                    errors.append("diagnostic_sensors.module_events.enabled_by_default must be a boolean")
+
+        return errors
+
     # Modbus properties
     @property
     def modbus_host(self) -> str:
@@ -286,3 +335,39 @@ class Config:
     def log_format(self) -> str:
         """Get log format string."""
         return self._config["application"]["logging"]["format"]
+
+    # Diagnostic Sensors properties
+    @property
+    def diagnostic_sensors_enabled(self) -> bool:
+        """Get global diagnostic sensors enabled flag."""
+        return self._config.get("diagnostic_sensors", {}).get("enabled", True)
+
+    @property
+    def temperature_sensors_enabled(self) -> bool:
+        """Get temperature sensors enabled flag."""
+        return self._config.get("diagnostic_sensors", {}).get("temperature", {}).get("enabled", True)
+
+    @property
+    def temperature_sensors_default_enabled(self) -> bool:
+        """Get temperature sensors default enabled flag."""
+        return self._config.get("diagnostic_sensors", {}).get("temperature", {}).get("enabled_by_default", False)
+
+    @property
+    def operating_state_sensors_enabled(self) -> bool:
+        """Get operating state sensors enabled flag."""
+        return self._config.get("diagnostic_sensors", {}).get("operating_state", {}).get("enabled", True)
+
+    @property
+    def operating_state_sensors_default_enabled(self) -> bool:
+        """Get operating state sensors default enabled flag."""
+        return self._config.get("diagnostic_sensors", {}).get("operating_state", {}).get("enabled_by_default", True)
+
+    @property
+    def module_events_sensors_enabled(self) -> bool:
+        """Get module events sensors enabled flag."""
+        return self._config.get("diagnostic_sensors", {}).get("module_events", {}).get("enabled", True)
+
+    @property
+    def module_events_sensors_default_enabled(self) -> bool:
+        """Get module events sensors default enabled flag."""
+        return self._config.get("diagnostic_sensors", {}).get("module_events", {}).get("enabled_by_default", False)

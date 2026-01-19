@@ -2,11 +2,11 @@
 
 import json
 import logging
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 import paho.mqtt.client as mqtt
 
-from .modbus_client import MPPTData
+from .modbus_client import MPPTData, DiagnosticData
 
 logger = logging.getLogger(__name__)
 
@@ -278,6 +278,155 @@ class MQTTPublisher:
             logger.error(f"Error publishing discovery messages: {e}")
             return False
 
+    def publish_diagnostic_discovery(self, device_info: Dict[str, str], num_modules: int, 
+                                   temperature_enabled: bool = True, temperature_default: bool = False,
+                                   operating_state_enabled: bool = True, operating_state_default: bool = True,
+                                   module_events_enabled: bool = True, module_events_default: bool = False) -> bool:
+        """
+        Publish Home Assistant MQTT discovery messages for diagnostic sensors.
+
+        Args:
+            device_info: Dictionary with manufacturer, model, and serial_number
+            num_modules: Number of MPPT modules available
+            temperature_enabled: Whether temperature sensors should be created
+            temperature_default: Whether temperature sensors are enabled by default
+            operating_state_enabled: Whether operating state sensors should be created
+            operating_state_default: Whether operating state sensors are enabled by default
+            module_events_enabled: Whether module events sensors should be created
+            module_events_default: Whether module events sensors are enabled by default
+
+        Returns:
+            True if all discovery messages published successfully, False otherwise
+        """
+        if not self._connected:
+            logger.error("Cannot publish diagnostic discovery: not connected to MQTT broker")
+            return False
+
+        try:
+            serial = device_info.get("serial_number", "unknown")
+            manufacturer = device_info.get("manufacturer", "Unknown")
+            model = device_info.get("model", "Unknown")
+
+            device_id = f"fronius_{serial}"
+
+            # Device information shared by all sensors
+            device = {
+                "identifiers": [f"fronius_{serial}"],
+                "name": f"{manufacturer} {model}",
+                "manufacturer": manufacturer,
+                "model": model,
+                "serial_number": serial,
+            }
+
+            diagnostic_sensors = []
+
+            # Generate diagnostic sensors for each module
+            for module_num in range(1, num_modules + 1):
+                # Temperature sensors (disabled by default)
+                if temperature_enabled:
+                    diagnostic_sensors.append({
+                        "id": f"mppt{module_num}_temperature",
+                        "name": f"MPPT{module_num} Temperature",
+                        "unit": "°C",
+                        "device_class": "temperature",
+                        "entity_category": "diagnostic",
+                        "enabled_by_default": temperature_default,
+                        "value_template": "{{ value_json.temperature }}",
+                    })
+
+                # Operating state sensors (enabled by default)
+                if operating_state_enabled:
+                    diagnostic_sensors.append({
+                        "id": f"mppt{module_num}_operating_state",
+                        "name": f"MPPT{module_num} Operating State",
+                        "device_class": "enum",
+                        "entity_category": "diagnostic",
+                        "enabled_by_default": operating_state_default,
+                        "value_template": "{{ value_json.state }}",
+                    })
+
+                # Module events sensors (disabled by default)
+                if module_events_enabled:
+                    diagnostic_sensors.append({
+                        "id": f"mppt{module_num}_module_events",
+                        "name": f"MPPT{module_num} Module Events",
+                        "entity_category": "diagnostic",
+                        "enabled_by_default": module_events_default,
+                        "value_template": "{{ value_json.events }}",
+                    })
+
+            # Publish discovery message for each diagnostic sensor
+            # Track successful and failed sensor creations for resilient handling
+            successful_sensors = []
+            failed_sensors = []
+            
+            for sensor in diagnostic_sensors:
+                sensor_id = sensor["id"]
+
+                try:
+                    # Discovery topic pattern: {prefix}/sensor/{device_id}/{sensor_id}/config
+                    discovery_topic = f"{self._topic_prefix}/sensor/{device_id}/{sensor_id}/config"
+
+                    # State topic pattern: {prefix}/sensor/{device_id}/{sensor_id}/state
+                    state_topic = f"{self._topic_prefix}/sensor/{device_id}/{sensor_id}/state"
+
+                    # Build discovery payload
+                    discovery_payload = {
+                        "name": sensor["name"],
+                        "unique_id": f"{device_id}_{sensor_id}",
+                        "state_topic": state_topic,
+                        "entity_category": sensor["entity_category"],
+                        "enabled_by_default": sensor["enabled_by_default"],
+                        "value_template": sensor["value_template"],
+                        "expire_after": 3600,  # Sensor becomes unavailable after 1 hour without data
+                        "device": device,
+                    }
+
+                    # Add optional fields
+                    if "unit" in sensor:
+                        discovery_payload["unit_of_measurement"] = sensor["unit"]
+                    if "device_class" in sensor:
+                        discovery_payload["device_class"] = sensor["device_class"]
+
+                    # Publish discovery message
+                    result = self._client.publish(
+                        discovery_topic, json.dumps(discovery_payload), qos=1, retain=True
+                    )
+
+                    if result.rc != mqtt.MQTT_ERR_SUCCESS:
+                        # Log specific error for this sensor but continue with remaining sensors
+                        error_msg = f"Failed to publish diagnostic discovery for {sensor_id}: MQTT error code {result.rc}"
+                        logger.error(error_msg)
+                        failed_sensors.append((sensor_id, error_msg))
+                    else:
+                        logger.debug(f"Published diagnostic discovery for {sensor_id}")
+                        successful_sensors.append(sensor_id)
+
+                except Exception as e:
+                    # Log specific error for this sensor but continue with remaining sensors
+                    error_msg = f"Exception during diagnostic discovery creation for {sensor_id}: {e}"
+                    logger.error(error_msg)
+                    failed_sensors.append((sensor_id, error_msg))
+
+            # Log summary of sensor creation results
+            if successful_sensors:
+                logger.info(f"Successfully published diagnostic discovery messages for {len(successful_sensors)} sensors: {', '.join(successful_sensors)}")
+            
+            if failed_sensors:
+                failed_sensor_names = [sensor_id for sensor_id, _ in failed_sensors]
+                logger.warning(f"Failed to create {len(failed_sensors)} diagnostic sensors: {', '.join(failed_sensor_names)}")
+                # Log detailed error information for troubleshooting
+                for sensor_id, error_msg in failed_sensors:
+                    logger.debug(f"Detailed error for {sensor_id}: {error_msg}")
+
+            # Return True if at least one sensor was created successfully, or if no sensors were attempted
+            # This allows the system to continue operating even with partial sensor creation failures
+            return len(failed_sensors) == 0 or len(successful_sensors) > 0
+
+        except Exception as e:
+            logger.error(f"Error publishing diagnostic discovery messages: {e}")
+            return False
+
     def publish_sensor_data(self, mppt_data: MPPTData) -> bool:
         """
         Publish MPPT sensor data to MQTT state topics.
@@ -342,4 +491,81 @@ class MQTTPublisher:
 
         except Exception as e:
             logger.error(f"Error publishing sensor data: {e}")
+            return False
+
+    def publish_diagnostic_data(self, diagnostic_data: List[DiagnosticData]) -> bool:
+        """
+        Publish diagnostic sensor data to MQTT state topics.
+
+        Args:
+            diagnostic_data: List of DiagnosticData objects for each module
+
+        Returns:
+            True if all data published successfully, False otherwise
+        """
+        if not self._connected:
+            logger.error("Cannot publish diagnostic data: not connected to MQTT broker")
+            return False
+
+        if not self._device_id:
+            logger.error(
+                "Cannot publish diagnostic data: device_id not set. "
+                "Call publish_discovery() first."
+            )
+            return False
+
+        try:
+            from datetime import datetime
+            device_id = self._device_id
+
+            # Publish diagnostic data for each module
+            for module_num, diag_data in enumerate(diagnostic_data, start=1):
+                # Temperature sensor data
+                if diag_data.temperature is not None:
+                    temp_payload = {
+                        "temperature": diag_data.temperature,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    temp_topic = f"{self._topic_prefix}/sensor/{device_id}/mppt{module_num}_temperature/state"
+                    
+                    result = self._client.publish(temp_topic, json.dumps(temp_payload), qos=0, retain=False)
+                    if result.rc != mqtt.MQTT_ERR_SUCCESS:
+                        logger.error(f"Failed to publish temperature data for MPPT{module_num}: {result.rc}")
+                        return False
+                else:
+                    # Publish unavailable state
+                    temp_topic = f"{self._topic_prefix}/sensor/{device_id}/mppt{module_num}_temperature/state"
+                    result = self._client.publish(temp_topic, "unavailable", qos=0, retain=False)
+                    if result.rc != mqtt.MQTT_ERR_SUCCESS:
+                        logger.error(f"Failed to publish temperature unavailable for MPPT{module_num}: {result.rc}")
+
+                # Operating state sensor data
+                state_payload = {
+                    "state": diag_data.formatted_state,
+                    "timestamp": datetime.now().isoformat()
+                }
+                state_topic = f"{self._topic_prefix}/sensor/{device_id}/mppt{module_num}_operating_state/state"
+                
+                result = self._client.publish(state_topic, json.dumps(state_payload), qos=0, retain=False)
+                if result.rc != mqtt.MQTT_ERR_SUCCESS:
+                    logger.error(f"Failed to publish operating state data for MPPT{module_num}: {result.rc}")
+                    return False
+
+                # Module events sensor data
+                events_payload = {
+                    "events": diag_data.formatted_events,
+                    "timestamp": datetime.now().isoformat()
+                }
+                events_topic = f"{self._topic_prefix}/sensor/{device_id}/mppt{module_num}_module_events/state"
+                
+                result = self._client.publish(events_topic, json.dumps(events_payload), qos=0, retain=False)
+                if result.rc != mqtt.MQTT_ERR_SUCCESS:
+                    logger.error(f"Failed to publish module events data for MPPT{module_num}: {result.rc}")
+                    return False
+
+            logger.debug(f"Published diagnostic data for {len(diagnostic_data)} modules")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error publishing diagnostic data: {e}")
             return False
