@@ -160,6 +160,9 @@ class ModbusClient:
             True if connection and scan successful, False otherwise
         """
         try:
+            # Clean up any existing connection to avoid socket leaks
+            self.disconnect()
+
             logger.info(f"Attempting Modbus connection to {self._host}:{self._port} (unit_id={self._unit_id})")
 
             # Create pysunspec2 device instance

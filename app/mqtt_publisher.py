@@ -138,6 +138,9 @@ class MQTTPublisher:
         self._client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2, client_id=self._client_id)
         self._client.username_pw_set(self._username, self._password)
 
+        # Enable paho's built-in auto-reconnect with exponential backoff (1s min, 30s max)
+        self._client.reconnect_delay_set(min_delay=1, max_delay=30)
+
         # Set up callbacks
         self._client.on_connect = self._on_connect
         self._client.on_disconnect = self._on_disconnect

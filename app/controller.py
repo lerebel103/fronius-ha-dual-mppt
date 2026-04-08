@@ -215,6 +215,14 @@ def handle_data_polling(
 
         # Publish to MQTT if connected
         if state.mqtt_connected:
+            # Proactive liveness check — detect silent disconnects before attempting publish
+            if not mqtt_publisher.is_connected():
+                logger.warning("MQTT connection lost (detected before publish), will attempt reconnection")
+                state.mqtt_connected = False
+                state.mqtt_retry_count = 0
+                state.diagnostic_discovery_published = False
+                return
+
             # Publish core sensor data
             if not mqtt_publisher.publish_sensor_data(mppt_data):
                 logger.warning("Failed to publish sensor data to MQTT")
@@ -242,6 +250,7 @@ def handle_data_polling(
         logger.warning("Failed to read MPPT data, triggering Modbus reconnection")
         state.modbus_connected = False
         state.model_160_verified = False
+        state.modbus_retry_count = 0  # Reset so backoff starts fresh from the new failure
 
 
 def calculate_sleep_time(next_poll_time: float, poll_interval: int) -> tuple[float, float]:

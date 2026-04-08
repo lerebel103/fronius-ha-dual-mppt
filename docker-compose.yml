@@ -9,9 +9,6 @@ services:
     volumes:
       - ./config.yaml:/etc/fronius-ha-dual-mppt/config.yaml:rw
     
-    # Network mode host for easier access to local network devices
-    network_mode: host
-    
     # Environment variables
     environment:
       - PYTHONUNBUFFERED=1
@@ -23,11 +20,3 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    
-    # Health check
-    healthcheck:
-      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
