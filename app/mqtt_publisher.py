@@ -251,7 +251,7 @@ class MQTTPublisher:
 
         try:
             serial = device_info.get("serial_number", "unknown")
-            manufacturer = device_info.get("manufacturer", "Unknown")
+            inverter_manufacturer = device_info.get("manufacturer", "Unknown")
             model = device_info.get("model", "Unknown")
 
             # Store device ID for use in publish_sensor_data
@@ -261,9 +261,9 @@ class MQTTPublisher:
             # Device information shared by all sensors
             device = {
                 "identifiers": [f"fronius_{serial}"],
-                "name": f"{manufacturer} {model}",
-                "manufacturer": manufacturer,
-                "model": model,
+                "name": f"{inverter_manufacturer} {model}",
+                "manufacturer": "lerebel103",
+                "model": f"{inverter_manufacturer} {model}",
                 "serial_number": serial,
                 "sw_version": __version__,
             }
@@ -482,7 +482,7 @@ class MQTTPublisher:
 
         try:
             serial = device_info.get("serial_number", "unknown")
-            manufacturer = device_info.get("manufacturer", "Unknown")
+            inverter_manufacturer = device_info.get("manufacturer", "Unknown")
             model = device_info.get("model", "Unknown")
 
             device_id = f"fronius_{serial}"
@@ -490,9 +490,9 @@ class MQTTPublisher:
             # Device information shared by all sensors
             device = {
                 "identifiers": [f"fronius_{serial}"],
-                "name": f"{manufacturer} {model}",
-                "manufacturer": manufacturer,
-                "model": model,
+                "name": f"{inverter_manufacturer} {model}",
+                "manufacturer": "lerebel103",
+                "model": f"{inverter_manufacturer} {model}",
                 "serial_number": serial,
             }
 
