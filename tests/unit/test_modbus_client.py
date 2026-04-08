@@ -2,19 +2,17 @@
 Tests for ModbusClient MPPT data reading functionality.
 """
 
-from datetime import datetime
 from unittest.mock import Mock, patch
 
 import pytest
 
 from app.modbus_client import (
-    ModbusClient, 
-    MPPTChannelData, 
+    DiagnosticData,
+    ModbusClient,
+    ModuleEventsDecoder,
     MPPTData,
     MPPTModuleData,
-    DiagnosticData,
     OperatingStateFormatter,
-    ModuleEventsDecoder
 )
 
 
@@ -31,13 +29,13 @@ class TestModbusClient:
         """Mock Model 160 with single MPPT module."""
         mock_model = Mock()
         mock_model.N.value = 1
-        
+
         # Mock single module
         mock_module = Mock()
         mock_module.DCV.cvalue = 400.5
         mock_module.DCA.cvalue = 10.2
         mock_module.DCW.cvalue = 4085.1
-        
+
         mock_model.module = [mock_module]
         return mock_model
 
@@ -46,19 +44,19 @@ class TestModbusClient:
         """Mock Model 160 with dual MPPT modules."""
         mock_model = Mock()
         mock_model.N.value = 2
-        
+
         # Mock first module
         mock_module1 = Mock()
         mock_module1.DCV.cvalue = 400.5
         mock_module1.DCA.cvalue = 10.2
         mock_module1.DCW.cvalue = 4085.1
-        
+
         # Mock second module
         mock_module2 = Mock()
         mock_module2.DCV.cvalue = 395.3
         mock_module2.DCA.cvalue = 9.8
         mock_module2.DCW.cvalue = 3873.94
-        
+
         mock_model.module = [mock_module1, mock_module2]
         return mock_model
 
@@ -86,20 +84,20 @@ class TestModbusClient:
         # Verify result
         assert result is not None
         assert isinstance(result, MPPTData)
-        
+
         # Check MPPT1 data (from first module)
         assert result.mppt1.voltage == 400.5
         assert result.mppt1.current == 10.2
         assert result.mppt1.power == 4085.1
-        
+
         # Check MPPT2 data (should be empty since only one module)
         assert result.mppt2.voltage == 0.0
         assert result.mppt2.current == 0.0
         assert result.mppt2.power == 0.0
-        
+
         # Check total power
         assert result.total_power == 4085.1
-        
+
         # Verify model was read
         mock_model_160_single_module.read.assert_called_once()
 
@@ -119,20 +117,20 @@ class TestModbusClient:
         # Verify result
         assert result is not None
         assert isinstance(result, MPPTData)
-        
+
         # Check MPPT1 data (from first module)
         assert result.mppt1.voltage == 400.5
         assert result.mppt1.current == 10.2
         assert result.mppt1.power == 4085.1
-        
+
         # Check MPPT2 data (from second module)
         assert result.mppt2.voltage == 395.3
         assert result.mppt2.current == 9.8
         assert result.mppt2.power == 3873.94
-        
+
         # Check total power (sum of both modules)
         assert result.total_power == 4085.1 + 3873.94
-        
+
         # Verify model was read
         mock_model_160_dual_module.read.assert_called_once()
 
@@ -151,7 +149,7 @@ class TestModbusClient:
 
         # Should return None when no modules available
         assert result is None
-        
+
         # Verify model was read
         mock_model_160_no_modules.read.assert_called_once()
 
@@ -161,14 +159,14 @@ class TestModbusClient:
         # Setup mock model with module that raises exception
         mock_model = Mock()
         mock_model.N.value = 1
-        
+
         mock_module = Mock()
         mock_module.DCV.cvalue = None  # Simulate read error
         mock_module.DCA.cvalue = None
         mock_module.DCW.cvalue = None
-        
+
         mock_model.module = [mock_module]
-        
+
         # Setup mock device
         mock_device = Mock()
         mock_device.models = {160: [mock_model]}
@@ -192,21 +190,21 @@ class TestModbusClient:
         # Setup mock model with two modules, second one fails
         mock_model = Mock()
         mock_model.N.value = 2
-        
+
         # First module works
         mock_module1 = Mock()
         mock_module1.DCV.cvalue = 400.5
         mock_module1.DCA.cvalue = 10.2
         mock_module1.DCW.cvalue = 4085.1
-        
+
         # Second module fails
         mock_module2 = Mock()
         mock_module2.DCV.cvalue = None
         mock_module2.DCA.cvalue = None
         mock_module2.DCW.cvalue = None
-        
+
         mock_model.module = [mock_module1, mock_module2]
-        
+
         # Setup mock device
         mock_device = Mock()
         mock_device.models = {160: [mock_model]}
@@ -222,11 +220,11 @@ class TestModbusClient:
         assert result.mppt1.voltage == 400.5
         assert result.mppt1.current == 10.2
         assert result.mppt1.power == 4085.1
-        
+
         assert result.mppt2.voltage == 0.0
         assert result.mppt2.current == 0.0
         assert result.mppt2.power == 0.0
-        
+
         # Total should only include working module
         assert result.total_power == 4085.1
 
@@ -255,7 +253,7 @@ class TestModbusClient:
         # Setup mock device that raises exception on read
         mock_model = Mock()
         mock_model.read.side_effect = Exception("Read failed")
-        
+
         mock_device = Mock()
         mock_device.models = {160: [mock_model]}
         mock_sunspec.return_value = mock_device
@@ -271,7 +269,7 @@ class TestModbusClient:
         """Mock Model 160 with diagnostic fields available."""
         mock_model = Mock()
         mock_model.N.value = 2
-        
+
         # Mock first module with all diagnostic fields
         mock_module1 = Mock()
         mock_module1.DCV.cvalue = 400.5
@@ -279,9 +277,9 @@ class TestModbusClient:
         mock_module1.DCW.cvalue = 4085.1
         # Diagnostic fields
         mock_module1.Tmp.cvalue = 45.5  # Temperature in Celsius
-        mock_module1.DCSt.value = 4     # MPPT state
-        mock_module1.DCEvt.value = 0    # No events
-        
+        mock_module1.DCSt.value = 4  # MPPT state
+        mock_module1.DCEvt.value = 0  # No events
+
         # Mock second module with some diagnostic fields unavailable
         mock_module2 = Mock()
         mock_module2.DCV.cvalue = 395.3
@@ -289,9 +287,9 @@ class TestModbusClient:
         mock_module2.DCW.cvalue = 3873.94
         # Diagnostic fields - some unavailable
         mock_module2.Tmp.cvalue = None  # Temperature unavailable
-        mock_module2.DCSt.value = 7     # FAULT state
+        mock_module2.DCSt.value = 7  # FAULT state
         mock_module2.DCEvt.value = 129  # GROUND_FAULT (bit 0) + OVER_TEMP (bit 7)
-        
+
         mock_model.module = [mock_module1, mock_module2]
         return mock_model
 
@@ -311,18 +309,18 @@ class TestModbusClient:
         # Verify result
         assert result is not None
         assert isinstance(result, MPPTData)
-        
+
         # Check that modules with diagnostics are included
         assert result.modules is not None
         assert len(result.modules) == 2
-        
+
         # Check first module data and diagnostics
         module1 = result.modules[0]
         assert isinstance(module1, MPPTModuleData)
         assert module1.voltage == 400.5
         assert module1.current == 10.2
         assert module1.power == 4085.1
-        
+
         # Check first module diagnostics
         diag1 = module1.diagnostics
         assert isinstance(diag1, DiagnosticData)
@@ -331,14 +329,14 @@ class TestModbusClient:
         assert diag1.module_events == 0
         assert diag1.formatted_state == "MPPT"
         assert diag1.formatted_events == "No active events"
-        
+
         # Check second module data and diagnostics
         module2 = result.modules[1]
         assert isinstance(module2, MPPTModuleData)
         assert module2.voltage == 395.3
         assert module2.current == 9.8
         assert module2.power == 3873.94
-        
+
         # Check second module diagnostics (with some unavailable fields)
         diag2 = module2.diagnostics
         assert isinstance(diag2, DiagnosticData)
@@ -347,12 +345,12 @@ class TestModbusClient:
         assert diag2.module_events == 129
         assert diag2.formatted_state == "FAULT"
         assert diag2.formatted_events == "GROUND_FAULT, OVER_TEMP"
-        
+
         # Check backward compatibility - mppt1 and mppt2 should still work
         assert result.mppt1.voltage == 400.5
         assert result.mppt2.voltage == 395.3
         assert result.total_power == 4085.1 + 3873.94
-        
+
         # Verify model was read
         mock_model_160_with_diagnostics.read.assert_called_once()
 
@@ -361,7 +359,7 @@ class TestModbusClient:
         """Mock Model 160 without diagnostic fields (older firmware)."""
         mock_model = Mock()
         mock_model.N.value = 1
-        
+
         # Mock module without diagnostic fields
         mock_module = Mock()
         mock_module.DCV.cvalue = 400.5
@@ -371,12 +369,14 @@ class TestModbusClient:
         del mock_module.Tmp
         del mock_module.DCSt
         del mock_module.DCEvt
-        
+
         mock_model.module = [mock_module]
         return mock_model
 
     @patch("sunspec2.modbus.client.SunSpecModbusClientDeviceTCP")
-    def test_read_mppt_data_no_diagnostic_fields(self, mock_sunspec, modbus_client, mock_model_160_no_diagnostic_fields):
+    def test_read_mppt_data_no_diagnostic_fields(
+        self, mock_sunspec, modbus_client, mock_model_160_no_diagnostic_fields
+    ):
         """Test reading MPPT data when diagnostic fields are not available."""
         # Setup mock device
         mock_device = Mock()
@@ -391,18 +391,18 @@ class TestModbusClient:
         # Verify result
         assert result is not None
         assert isinstance(result, MPPTData)
-        
+
         # Check that modules with diagnostics are included
         assert result.modules is not None
         assert len(result.modules) == 1
-        
+
         # Check module data
         module1 = result.modules[0]
         assert isinstance(module1, MPPTModuleData)
         assert module1.voltage == 400.5
         assert module1.current == 10.2
         assert module1.power == 4085.1
-        
+
         # Check diagnostics - should all be None/unavailable
         diag1 = module1.diagnostics
         assert isinstance(diag1, DiagnosticData)
@@ -411,7 +411,7 @@ class TestModbusClient:
         assert diag1.module_events is None
         assert diag1.formatted_state == "unknown"
         assert diag1.formatted_events == "unavailable"
-        
+
         # Check backward compatibility still works
         assert result.mppt1.voltage == 400.5
         assert result.total_power == 4085.1
@@ -504,7 +504,7 @@ class TestDiagnosticData:
         diag_data = DiagnosticData.create(
             temperature=45.5,
             operating_state=4,  # MPPT
-            module_events=1 << 7  # OVER_TEMP
+            module_events=1 << 7,  # OVER_TEMP
         )
 
         assert diag_data.temperature == 45.5
@@ -515,11 +515,7 @@ class TestDiagnosticData:
 
     def test_create_with_none_values(self):
         """Test creating DiagnosticData with None values."""
-        diag_data = DiagnosticData.create(
-            temperature=None,
-            operating_state=None,
-            module_events=None
-        )
+        diag_data = DiagnosticData.create(temperature=None, operating_state=None, module_events=None)
 
         assert diag_data.temperature is None
         assert diag_data.operating_state is None
@@ -532,7 +528,7 @@ class TestDiagnosticData:
         diag_data = DiagnosticData.create(
             temperature=25.0,
             operating_state=None,
-            module_events=0  # No events
+            module_events=0,  # No events
         )
 
         assert diag_data.temperature == 25.0
@@ -546,7 +542,7 @@ class TestDiagnosticData:
         diag_data = DiagnosticData.create(
             temperature=30.0,
             operating_state=99,  # Invalid state
-            module_events=0
+            module_events=0,
         )
 
         assert diag_data.temperature == 30.0
@@ -559,18 +555,18 @@ class TestDiagnosticData:
         """Test creating DiagnosticData with multiple active events."""
         # GROUND_FAULT + INPUT_OVER_VOLTAGE + OVER_TEMP
         events_bitfield = (1 << 0) | (1 << 1) | (1 << 7)
-        
+
         diag_data = DiagnosticData.create(
             temperature=75.0,
             operating_state=7,  # FAULT
-            module_events=events_bitfield
+            module_events=events_bitfield,
         )
 
         assert diag_data.temperature == 75.0
         assert diag_data.operating_state == 7
         assert diag_data.module_events == events_bitfield
         assert diag_data.formatted_state == "FAULT"
-        
+
         # Check that all three events are in the formatted string
         formatted_events = diag_data.formatted_events
         assert "GROUND_FAULT" in formatted_events

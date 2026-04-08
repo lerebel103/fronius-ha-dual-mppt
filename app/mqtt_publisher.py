@@ -1,12 +1,14 @@
 """MQTT publisher for Home Assistant integration."""
 
+from __future__ import annotations
+
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import paho.mqtt.client as mqtt
 
-from .modbus_client import MPPTData, DiagnosticData
+from .modbus_client import DiagnosticData, MPPTData
 from .version import __version__
 
 logger = logging.getLogger(__name__)
@@ -16,16 +18,17 @@ logger = logging.getLogger(__name__)
 # Entity helper builders (mirrors the pattern from gw-charger-controller)
 # ---------------------------------------------------------------------------
 
+
 def _sensor(
     unique_id: str,
     name: str,
     slug: str,
     unit: str,
-    device_class: Optional[str] = None,
-    state_class: Optional[str] = None,
-    entity_category: Optional[str] = None,
-) -> Dict[str, Any]:
-    d: Dict[str, Any] = {
+    device_class: str | None = None,
+    state_class: str | None = None,
+    entity_category: str | None = None,
+) -> dict[str, Any]:
+    d: dict[str, Any] = {
         "component": "sensor",
         "unique_id": unique_id,
         "name": name,
@@ -52,8 +55,8 @@ def _number(
     unit: str,
     mode: str = "box",
     entity_category: str = "config",
-) -> Dict[str, Any]:
-    d: Dict[str, Any] = {
+) -> dict[str, Any]:
+    d: dict[str, Any] = {
         "component": "number",
         "unique_id": unique_id,
         "name": name,
@@ -74,7 +77,7 @@ def _text(
     name: str,
     slug: str,
     entity_category: str = "config",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     return {
         "component": "text",
         "unique_id": unique_id,
@@ -85,7 +88,7 @@ def _text(
 
 
 # Configuration and diagnostic entities (published alongside core MPPT sensors)
-CONFIG_ENTITIES: List[Dict[str, Any]] = [
+CONFIG_ENTITIES: list[dict[str, Any]] = [
     # Diagnostic sensor
     _sensor("fronius_uptime", "Controller Uptime", "uptime", "s", None, "total_increasing", "diagnostic"),
     # Modbus configuration
@@ -129,12 +132,10 @@ class MQTTPublisher:
         self._client_id = client_id
         self._topic_prefix = topic_prefix
         self._connected = False
-        self._device_id: Optional[str] = None  # Store device ID for state topics
+        self._device_id: str | None = None  # Store device ID for state topics
 
         # Create paho-mqtt client instance (using latest callback API version)
-        self._client = mqtt.Client(
-            callback_api_version=mqtt.CallbackAPIVersion.VERSION2, client_id=self._client_id
-        )
+        self._client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2, client_id=self._client_id)
         self._client.username_pw_set(self._username, self._password)
 
         # Set up callbacks
@@ -205,9 +206,7 @@ class MQTTPublisher:
                 logger.info("MQTT connection established successfully")
                 return True
             else:
-                logger.error(
-                    "MQTT connection timeout - connection not established within 10 seconds"
-                )
+                logger.error("MQTT connection timeout - connection not established within 10 seconds")
                 self._client.loop_stop()
                 return False
 
@@ -236,7 +235,7 @@ class MQTTPublisher:
         """
         return self._connected
 
-    def publish_discovery(self, device_info: Dict[str, str]) -> bool:
+    def publish_discovery(self, device_info: dict[str, str]) -> bool:
         """
         Publish Home Assistant MQTT discovery messages for all sensors.
 
@@ -351,9 +350,7 @@ class MQTTPublisher:
                 }
 
                 # Publish discovery message
-                result = self._client.publish(
-                    discovery_topic, json.dumps(discovery_payload), qos=1, retain=True
-                )
+                result = self._client.publish(discovery_topic, json.dumps(discovery_payload), qos=1, retain=True)
 
                 if result.rc != mqtt.MQTT_ERR_SUCCESS:
                     logger.error(f"Failed to publish discovery for {sensor_id}: {result.rc}")
@@ -372,7 +369,7 @@ class MQTTPublisher:
             logger.error(f"Error publishing discovery messages: {e}")
             return False
 
-    def _publish_config_discovery(self, device: Dict[str, Any]) -> None:
+    def _publish_config_discovery(self, device: dict[str, Any]) -> None:
         """Publish HA discovery for config number/text entities and uptime diagnostic sensor."""
         device_id = self._device_id
         prefix = self._topic_prefix
@@ -385,7 +382,7 @@ class MQTTPublisher:
             discovery_topic = f"{prefix}/{component}/{device_id}_{unique_id}/config"
             state_topic = f"{prefix}/{component}/{device_id}/{slug}/state"
 
-            payload: Dict[str, Any] = {
+            payload: dict[str, Any] = {
                 "name": entity["name"],
                 "unique_id": f"{device_id}_{unique_id}",
                 "object_id": f"{device_id}_{unique_id}",
@@ -394,8 +391,17 @@ class MQTTPublisher:
             }
 
             # Optional fields
-            for key in ("unit_of_measurement", "device_class", "state_class",
-                        "entity_category", "min", "max", "step", "mode", "force_update"):
+            for key in (
+                "unit_of_measurement",
+                "device_class",
+                "state_class",
+                "entity_category",
+                "min",
+                "max",
+                "step",
+                "mode",
+                "force_update",
+            ):
                 if key in entity:
                     payload[key] = entity[key]
 
@@ -443,10 +449,17 @@ class MQTTPublisher:
             logger.warning(f"Failed to publish config state: {e}")
             return False
 
-    def publish_diagnostic_discovery(self, device_info: Dict[str, str], num_modules: int, 
-                                   temperature_enabled: bool = True, temperature_default: bool = False,
-                                   operating_state_enabled: bool = True, operating_state_default: bool = True,
-                                   module_events_enabled: bool = True, module_events_default: bool = False) -> bool:
+    def publish_diagnostic_discovery(
+        self,
+        device_info: dict[str, str],
+        num_modules: int,
+        temperature_enabled: bool = True,
+        temperature_default: bool = False,
+        operating_state_enabled: bool = True,
+        operating_state_default: bool = True,
+        module_events_enabled: bool = True,
+        module_events_default: bool = False,
+    ) -> bool:
         """
         Publish Home Assistant MQTT discovery messages for diagnostic sensors.
 
@@ -489,42 +502,48 @@ class MQTTPublisher:
             for module_num in range(1, num_modules + 1):
                 # Temperature sensors (disabled by default)
                 if temperature_enabled:
-                    diagnostic_sensors.append({
-                        "id": f"mppt{module_num}_temperature",
-                        "name": f"MPPT{module_num} Temperature",
-                        "unit": "°C",
-                        "device_class": "temperature",
-                        "entity_category": "diagnostic",
-                        "enabled_by_default": temperature_default,
-                        "value_template": "{{ value_json.temperature }}",
-                    })
+                    diagnostic_sensors.append(
+                        {
+                            "id": f"mppt{module_num}_temperature",
+                            "name": f"MPPT{module_num} Temperature",
+                            "unit": "°C",
+                            "device_class": "temperature",
+                            "entity_category": "diagnostic",
+                            "enabled_by_default": temperature_default,
+                            "value_template": "{{ value_json.temperature }}",
+                        }
+                    )
 
                 # Operating state sensors (enabled by default)
                 if operating_state_enabled:
-                    diagnostic_sensors.append({
-                        "id": f"mppt{module_num}_operating_state",
-                        "name": f"MPPT{module_num} Operating State",
-                        "device_class": "enum",
-                        "entity_category": "diagnostic",
-                        "enabled_by_default": operating_state_default,
-                        "value_template": "{{ value_json.state }}",
-                    })
+                    diagnostic_sensors.append(
+                        {
+                            "id": f"mppt{module_num}_operating_state",
+                            "name": f"MPPT{module_num} Operating State",
+                            "device_class": "enum",
+                            "entity_category": "diagnostic",
+                            "enabled_by_default": operating_state_default,
+                            "value_template": "{{ value_json.state }}",
+                        }
+                    )
 
                 # Module events sensors (disabled by default)
                 if module_events_enabled:
-                    diagnostic_sensors.append({
-                        "id": f"mppt{module_num}_module_events",
-                        "name": f"MPPT{module_num} Module Events",
-                        "entity_category": "diagnostic",
-                        "enabled_by_default": module_events_default,
-                        "value_template": "{{ value_json.events }}",
-                    })
+                    diagnostic_sensors.append(
+                        {
+                            "id": f"mppt{module_num}_module_events",
+                            "name": f"MPPT{module_num} Module Events",
+                            "entity_category": "diagnostic",
+                            "enabled_by_default": module_events_default,
+                            "value_template": "{{ value_json.events }}",
+                        }
+                    )
 
             # Publish discovery message for each diagnostic sensor
             # Track successful and failed sensor creations for resilient handling
             successful_sensors = []
             failed_sensors = []
-            
+
             for sensor in diagnostic_sensors:
                 sensor_id = sensor["id"]
 
@@ -554,13 +573,13 @@ class MQTTPublisher:
                         discovery_payload["device_class"] = sensor["device_class"]
 
                     # Publish discovery message
-                    result = self._client.publish(
-                        discovery_topic, json.dumps(discovery_payload), qos=1, retain=True
-                    )
+                    result = self._client.publish(discovery_topic, json.dumps(discovery_payload), qos=1, retain=True)
 
                     if result.rc != mqtt.MQTT_ERR_SUCCESS:
                         # Log specific error for this sensor but continue with remaining sensors
-                        error_msg = f"Failed to publish diagnostic discovery for {sensor_id}: MQTT error code {result.rc}"
+                        error_msg = (
+                            f"Failed to publish diagnostic discovery for {sensor_id}: MQTT error code {result.rc}"
+                        )
                         logger.error(error_msg)
                         failed_sensors.append((sensor_id, error_msg))
                     else:
@@ -575,11 +594,14 @@ class MQTTPublisher:
 
             # Log summary of sensor creation results
             if successful_sensors:
-                logger.info(f"Successfully published diagnostic discovery messages for {len(successful_sensors)} sensors: {', '.join(successful_sensors)}")
-            
+                names = ", ".join(successful_sensors)
+                logger.info(f"Published diagnostic discovery for {len(successful_sensors)} sensors: {names}")
+
             if failed_sensors:
                 failed_sensor_names = [sensor_id for sensor_id, _ in failed_sensors]
-                logger.warning(f"Failed to create {len(failed_sensors)} diagnostic sensors: {', '.join(failed_sensor_names)}")
+                logger.warning(
+                    f"Failed to create {len(failed_sensors)} diagnostic sensors: {', '.join(failed_sensor_names)}"
+                )
                 # Log detailed error information for troubleshooting
                 for sensor_id, error_msg in failed_sensors:
                     logger.debug(f"Detailed error for {sensor_id}: {error_msg}")
@@ -607,9 +629,7 @@ class MQTTPublisher:
             return False
 
         if not self._device_id:
-            logger.error(
-                "Cannot publish sensor data: device_id not set. " "Call publish_discovery() first."
-            )
+            logger.error("Cannot publish sensor data: device_id not set. Call publish_discovery() first.")
             return False
 
         try:
@@ -658,7 +678,7 @@ class MQTTPublisher:
             logger.error(f"Error publishing sensor data: {e}")
             return False
 
-    def publish_diagnostic_data(self, diagnostic_data: List[DiagnosticData]) -> bool:
+    def publish_diagnostic_data(self, diagnostic_data: list[DiagnosticData]) -> bool:
         """
         Publish diagnostic sensor data to MQTT state topics.
 
@@ -673,26 +693,21 @@ class MQTTPublisher:
             return False
 
         if not self._device_id:
-            logger.error(
-                "Cannot publish diagnostic data: device_id not set. "
-                "Call publish_discovery() first."
-            )
+            logger.error("Cannot publish diagnostic data: device_id not set. Call publish_discovery() first.")
             return False
 
         try:
             from datetime import datetime
+
             device_id = self._device_id
 
             # Publish diagnostic data for each module
             for module_num, diag_data in enumerate(diagnostic_data, start=1):
                 # Temperature sensor data
                 if diag_data.temperature is not None:
-                    temp_payload = {
-                        "temperature": diag_data.temperature,
-                        "timestamp": datetime.now().isoformat()
-                    }
+                    temp_payload = {"temperature": diag_data.temperature, "timestamp": datetime.now().isoformat()}
                     temp_topic = f"{self._topic_prefix}/sensor/{device_id}/mppt{module_num}_temperature/state"
-                    
+
                     result = self._client.publish(temp_topic, json.dumps(temp_payload), qos=0, retain=False)
                     if result.rc != mqtt.MQTT_ERR_SUCCESS:
                         logger.error(f"Failed to publish temperature data for MPPT{module_num}: {result.rc}")
@@ -705,24 +720,18 @@ class MQTTPublisher:
                         logger.error(f"Failed to publish temperature unavailable for MPPT{module_num}: {result.rc}")
 
                 # Operating state sensor data
-                state_payload = {
-                    "state": diag_data.formatted_state,
-                    "timestamp": datetime.now().isoformat()
-                }
+                state_payload = {"state": diag_data.formatted_state, "timestamp": datetime.now().isoformat()}
                 state_topic = f"{self._topic_prefix}/sensor/{device_id}/mppt{module_num}_operating_state/state"
-                
+
                 result = self._client.publish(state_topic, json.dumps(state_payload), qos=0, retain=False)
                 if result.rc != mqtt.MQTT_ERR_SUCCESS:
                     logger.error(f"Failed to publish operating state data for MPPT{module_num}: {result.rc}")
                     return False
 
                 # Module events sensor data
-                events_payload = {
-                    "events": diag_data.formatted_events,
-                    "timestamp": datetime.now().isoformat()
-                }
+                events_payload = {"events": diag_data.formatted_events, "timestamp": datetime.now().isoformat()}
                 events_topic = f"{self._topic_prefix}/sensor/{device_id}/mppt{module_num}_module_events/state"
-                
+
                 result = self._client.publish(events_topic, json.dumps(events_payload), qos=0, retain=False)
                 if result.rc != mqtt.MQTT_ERR_SUCCESS:
                     logger.error(f"Failed to publish module events data for MPPT{module_num}: {result.rc}")

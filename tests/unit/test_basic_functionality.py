@@ -126,9 +126,7 @@ application:
         client.connect()
 
         # Verify the client was created with correct parameters
-        mock_sunspec.assert_called_once_with(
-            slave_id=1, ipaddr="192.168.1.100", ipport=502, timeout=10
-        )
+        mock_sunspec.assert_called_once_with(slave_id=1, ipaddr="192.168.1.100", ipport=502, timeout=10)
 
         # Verify scan was called
         mock_device.scan.assert_called_once()
@@ -151,22 +149,22 @@ application:
 
         # Test connection attempt
         mock_client.connect.return_value = 0  # Success
-        
+
         # Mock the connection callback to simulate successful connection
         def mock_connect_side_effect(*args, **kwargs):
             # Simulate the _on_connect callback being called
             publisher._connected = True
             return 0
-        
+
         mock_client.connect.side_effect = mock_connect_side_effect
-        
+
         result = publisher.connect()
 
         # Verify the client was configured properly
         mock_client.username_pw_set.assert_called_once_with("test", "test")
         mock_client.connect.assert_called_once_with("192.168.1.50", 1883, keepalive=60)
         mock_client.loop_start.assert_called_once()
-        
+
         # Verify connection was successful
         assert result is True
         assert publisher.is_connected() is True

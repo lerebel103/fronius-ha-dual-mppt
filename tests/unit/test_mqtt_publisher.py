@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.modbus_client import MPPTChannelData, MPPTData, DiagnosticData
+from app.modbus_client import DiagnosticData, MPPTChannelData, MPPTData
 from app.mqtt_publisher import MQTTPublisher
 
 
@@ -51,13 +51,13 @@ def sample_diagnostic_data():
         DiagnosticData.create(
             temperature=45.2,
             operating_state=4,  # MPPT
-            module_events=0  # No events
+            module_events=0,  # No events
         ),
         DiagnosticData.create(
             temperature=None,  # Unavailable
             operating_state=2,  # SLEEPING
-            module_events=3  # GROUND_FAULT (bit 0) + INPUT_OVER_VOLTAGE (bit 1)
-        )
+            module_events=3,  # GROUND_FAULT (bit 0) + INPUT_OVER_VOLTAGE (bit 1)
+        ),
     ]
 
 
@@ -87,9 +87,7 @@ class TestMQTTPublisher:
         assert result is False
 
     @patch("paho.mqtt.client.Client")
-    def test_publish_sensor_data_success(
-        self, mock_mqtt_client, mqtt_publisher, sample_mppt_data, device_info
-    ):
+    def test_publish_sensor_data_success(self, mock_mqtt_client, mqtt_publisher, sample_mppt_data, device_info):
         """Test successful publish_sensor_data."""
         # Set up the publisher as connected with device_id
         mqtt_publisher._connected = True
@@ -169,9 +167,7 @@ class TestMQTTPublisher:
         assert payload_dict["timestamp"] == "2024-01-15T12:30:45"
 
     @patch("paho.mqtt.client.Client")
-    def test_publish_sensor_data_publish_failure(
-        self, mock_mqtt_client, mqtt_publisher, sample_mppt_data
-    ):
+    def test_publish_sensor_data_publish_failure(self, mock_mqtt_client, mqtt_publisher, sample_mppt_data):
         """Test publish_sensor_data when publish fails."""
         # Set up the publisher as connected with device_id
         mqtt_publisher._connected = True
@@ -261,9 +257,7 @@ class TestMQTTPublisher:
                 assert payload_dict["power"] >= 0
 
     @patch("paho.mqtt.client.Client")
-    def test_publish_discovery_includes_expire_after(
-        self, mock_mqtt_client, mqtt_publisher, device_info
-    ):
+    def test_publish_discovery_includes_expire_after(self, mock_mqtt_client, mqtt_publisher, device_info):
         """Test that publish_discovery includes expire_after parameter."""
         # Set up the publisher as connected
         mqtt_publisher._connected = True
@@ -317,7 +311,7 @@ class TestMQTTPublisher:
             operating_state_enabled=True,
             operating_state_default=True,
             module_events_enabled=True,
-            module_events_default=False
+            module_events_default=False,
         )
 
         # Verify success
@@ -380,7 +374,7 @@ class TestMQTTPublisher:
             operating_state_enabled=False,
             operating_state_default=False,
             module_events_enabled=False,
-            module_events_default=False
+            module_events_default=False,
         )
 
         # Verify success
@@ -475,8 +469,11 @@ class TestMQTTPublisher:
         payload_dict = json.loads(payload)
         assert "GROUND_FAULT" in payload_dict["events"]
         assert "INPUT_OVER_VOLTAGE" in payload_dict["events"]
+
     @patch("paho.mqtt.client.Client")
-    def test_publish_diagnostic_discovery_resilient_sensor_creation(self, mock_mqtt_client, mqtt_publisher, device_info):
+    def test_publish_diagnostic_discovery_resilient_sensor_creation(
+        self, mock_mqtt_client, mqtt_publisher, device_info
+    ):
         """Test resilient sensor creation - continue with remaining sensors when individual sensors fail."""
         # Set up the publisher as connected
         mqtt_publisher._connected = True
@@ -485,7 +482,7 @@ class TestMQTTPublisher:
         # Mock MQTT client with mixed success/failure results
         mock_result_success = MagicMock()
         mock_result_success.rc = 0  # MQTT_ERR_SUCCESS
-        
+
         mock_result_failure = MagicMock()
         mock_result_failure.rc = 1  # MQTT_ERR_NOMEM (example failure)
 
@@ -507,7 +504,7 @@ class TestMQTTPublisher:
             operating_state_enabled=True,
             operating_state_default=True,
             module_events_enabled=True,
-            module_events_default=False
+            module_events_default=False,
         )
 
         # Should return True because some sensors succeeded (resilient behavior)
@@ -518,12 +515,12 @@ class TestMQTTPublisher:
 
         # Verify the correct topics were attempted
         call_topics = [call[0][0] for call in mqtt_publisher._client.publish.call_args_list]
-        
+
         # Should have attempted all sensor types
         assert any("temperature" in topic for topic in call_topics)
         assert any("operating_state" in topic for topic in call_topics)
         assert any("module_events" in topic for topic in call_topics)
-        
+
         # Should have attempted both modules
         assert any("mppt1" in topic for topic in call_topics)
         assert any("mppt2" in topic for topic in call_topics)
@@ -550,7 +547,7 @@ class TestMQTTPublisher:
             operating_state_enabled=True,
             operating_state_default=True,
             module_events_enabled=True,
-            module_events_default=False
+            module_events_default=False,
         )
 
         # Should return False when all sensors fail
@@ -586,7 +583,7 @@ class TestMQTTPublisher:
             operating_state_enabled=True,
             operating_state_default=True,
             module_events_enabled=True,
-            module_events_default=False
+            module_events_default=False,
         )
 
         # Should return True because some sensors succeeded despite exceptions

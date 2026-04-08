@@ -1,7 +1,7 @@
 """Configuration management for Fronius Modbus to MQTT bridge."""
 
 import os
-from typing import Any, Dict, List
+from typing import Any
 
 import yaml
 
@@ -29,8 +29,8 @@ class Config:
         if not os.path.exists(config_path):
             raise FileNotFoundError(f"Configuration file not found: {config_path}")
 
-        with open(config_path, "r") as f:
-            self._config: Dict[str, Any] = yaml.safe_load(f)
+        with open(config_path) as f:
+            self._config: dict[str, Any] = yaml.safe_load(f)
 
         if self._config is None:
             raise yaml.YAMLError("Configuration file is empty")
@@ -48,7 +48,7 @@ class Config:
         Raises:
             ConfigValidationError: If any validation fails with descriptive message
         """
-        errors: List[str] = []
+        errors: list[str] = []
 
         # Validate Modbus section
         if "modbus" not in self._config:
@@ -77,15 +77,13 @@ class Config:
             errors.extend(self._validate_diagnostic_sensors(diagnostic_sensors))
 
         if errors:
-            raise ConfigValidationError(
-                "Configuration validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
-            )
+            raise ConfigValidationError("Configuration validation failed:\n" + "\n".join(f"  - {e}" for e in errors))
 
         return True
 
-    def _validate_modbus(self, modbus: Dict[str, Any]) -> List[str]:
+    def _validate_modbus(self, modbus: dict[str, Any]) -> list[str]:
         """Validate Modbus configuration section."""
-        errors: List[str] = []
+        errors: list[str] = []
 
         # Validate host
         if "host" not in modbus:
@@ -121,9 +119,9 @@ class Config:
 
         return errors
 
-    def _validate_mqtt(self, mqtt: Dict[str, Any]) -> List[str]:
+    def _validate_mqtt(self, mqtt: dict[str, Any]) -> list[str]:
         """Validate MQTT configuration section."""
-        errors: List[str] = []
+        errors: list[str] = []
 
         # Validate broker
         if "broker" not in mqtt:
@@ -171,9 +169,9 @@ class Config:
 
         return errors
 
-    def _validate_application(self, application: Dict[str, Any]) -> List[str]:
+    def _validate_application(self, application: dict[str, Any]) -> list[str]:
         """Validate Application configuration section."""
-        errors: List[str] = []
+        errors: list[str] = []
 
         # Validate poll_interval
         if "poll_interval" not in application:
@@ -198,7 +196,7 @@ class Config:
             errors.append("application.logging must be a dictionary")
         else:
             logging_config = application["logging"]
-            
+
             # Validate log level
             if "level" not in logging_config:
                 errors.append("application.logging.level is required")
@@ -208,7 +206,7 @@ class Config:
                 valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
                 if logging_config["level"].upper() not in valid_levels:
                     errors.append(f"application.logging.level must be one of: {', '.join(valid_levels)}")
-            
+
             # Validate log format
             if "format" not in logging_config:
                 errors.append("application.logging.format is required")
@@ -219,14 +217,13 @@ class Config:
 
         return errors
 
-    def _validate_diagnostic_sensors(self, diagnostic_sensors: Dict[str, Any]) -> List[str]:
+    def _validate_diagnostic_sensors(self, diagnostic_sensors: dict[str, Any]) -> list[str]:
         """Validate Diagnostic Sensors configuration section."""
-        errors: List[str] = []
+        errors: list[str] = []
 
         # Validate global enabled flag
-        if "enabled" in diagnostic_sensors:
-            if not isinstance(diagnostic_sensors["enabled"], bool):
-                errors.append("diagnostic_sensors.enabled must be a boolean")
+        if "enabled" in diagnostic_sensors and not isinstance(diagnostic_sensors["enabled"], bool):
+            errors.append("diagnostic_sensors.enabled must be a boolean")
 
         # Validate temperature sensor configuration
         if "temperature" in diagnostic_sensors:

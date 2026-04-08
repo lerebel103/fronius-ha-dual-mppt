@@ -32,10 +32,7 @@ class TestConfigLoading:
             "application": {
                 "poll_interval": 5,
                 "mqtt_republish_rate": 300,
-                "logging": {
-                    "level": "INFO",
-                    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-                }
+                "logging": {"level": "INFO", "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"},
             },
         }
 
@@ -163,9 +160,7 @@ class TestConfigValidation:
             config_path = f.name
 
         try:
-            with pytest.raises(
-                ConfigValidationError, match="Missing required section: 'application'"
-            ):
+            with pytest.raises(ConfigValidationError, match="Missing required section: 'application'"):
                 Config(config_path)
         finally:
             os.unlink(config_path)
@@ -198,9 +193,7 @@ class TestConfigValidation:
             config_path = f.name
 
         try:
-            with pytest.raises(
-                ConfigValidationError, match="modbus.port must be between 1 and 65535"
-            ):
+            with pytest.raises(ConfigValidationError, match="modbus.port must be between 1 and 65535"):
                 Config(config_path)
         finally:
             os.unlink(config_path)
@@ -227,8 +220,8 @@ class TestConfigValidation:
                 "mqtt_republish_rate": 300,
                 "logging": {
                     "level": "INVALID",  # Invalid log level
-                    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-                }
+                    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+                },
             },
         }
 
@@ -305,9 +298,7 @@ class TestConfigValidation:
             config_path = f.name
 
         try:
-            with pytest.raises(
-                ConfigValidationError, match="application.poll_interval must be greater than 0"
-            ):
+            with pytest.raises(ConfigValidationError, match="application.poll_interval must be greater than 0"):
                 Config(config_path)
         finally:
             os.unlink(config_path)
@@ -336,10 +327,7 @@ class TestDiagnosticSensorConfig:
             "application": {
                 "poll_interval": 5,
                 "mqtt_republish_rate": 300,
-                "logging": {
-                    "level": "INFO",
-                    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-                }
+                "logging": {"level": "INFO", "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"},
             },
             # No diagnostic_sensors section - should use defaults
         }
@@ -382,10 +370,7 @@ class TestDiagnosticSensorConfig:
             "application": {
                 "poll_interval": 5,
                 "mqtt_republish_rate": 300,
-                "logging": {
-                    "level": "INFO",
-                    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-                }
+                "logging": {"level": "INFO", "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"},
             },
             "diagnostic_sensors": {
                 "enabled": False,
@@ -442,10 +427,7 @@ class TestDiagnosticSensorConfig:
             "application": {
                 "poll_interval": 5,
                 "mqtt_republish_rate": 300,
-                "logging": {
-                    "level": "INFO",
-                    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-                }
+                "logging": {"level": "INFO", "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"},
             },
             "diagnostic_sensors": {
                 "enabled": "invalid",  # Should be boolean
@@ -457,9 +439,7 @@ class TestDiagnosticSensorConfig:
             config_path = f.name
 
         try:
-            with pytest.raises(
-                ConfigValidationError, match="diagnostic_sensors.enabled must be a boolean"
-            ):
+            with pytest.raises(ConfigValidationError, match="diagnostic_sensors.enabled must be a boolean"):
                 Config(config_path)
         finally:
             os.unlink(config_path)
@@ -484,10 +464,7 @@ class TestDiagnosticSensorConfig:
             "application": {
                 "poll_interval": 5,
                 "mqtt_republish_rate": 300,
-                "logging": {
-                    "level": "INFO",
-                    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-                }
+                "logging": {"level": "INFO", "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"},
             },
             "diagnostic_sensors": {
                 "temperature": "invalid",  # Should be dictionary
@@ -499,9 +476,7 @@ class TestDiagnosticSensorConfig:
             config_path = f.name
 
         try:
-            with pytest.raises(
-                ConfigValidationError, match="diagnostic_sensors.temperature must be a dictionary"
-            ):
+            with pytest.raises(ConfigValidationError, match="diagnostic_sensors.temperature must be a dictionary"):
                 Config(config_path)
         finally:
             os.unlink(config_path)
@@ -526,10 +501,7 @@ class TestDiagnosticSensorConfig:
             "application": {
                 "poll_interval": 5,
                 "mqtt_republish_rate": 300,
-                "logging": {
-                    "level": "INFO",
-                    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-                }
+                "logging": {"level": "INFO", "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"},
             },
             "diagnostic_sensors": {
                 "temperature": {
@@ -570,10 +542,7 @@ class TestDiagnosticSensorConfig:
             "application": {
                 "poll_interval": 5,
                 "mqtt_republish_rate": 300,
-                "logging": {
-                    "level": "INFO",
-                    "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-                }
+                "logging": {"level": "INFO", "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"},
             },
             "diagnostic_sensors": {
                 "enabled": False,

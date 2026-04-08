@@ -5,10 +5,11 @@ This module contains the core business logic for managing connections,
 polling data, and handling errors.
 """
 
+from __future__ import annotations
+
 import logging
 import time
 from dataclasses import dataclass
-from typing import Optional
 
 from .config import Config
 from .modbus_client import ModbusClient
@@ -24,12 +25,12 @@ class ConnectionState:
     modbus_connected: bool = False
     mqtt_connected: bool = False
     model_160_verified: bool = False
-    device_info: Optional[dict] = None
+    device_info: dict | None = None
     modbus_retry_count: int = 0
     mqtt_retry_count: int = 0
     model_160_retry_count: int = 0
     diagnostic_discovery_published: bool = False
-    actual_module_count: Optional[int] = None
+    actual_module_count: int | None = None
     start_time: float = 0.0  # Track controller start time for uptime
 
 
@@ -48,9 +49,7 @@ def exponential_backoff(attempt: int, max_delay: int = 60) -> int:
     return delay
 
 
-def handle_modbus_connection(
-    modbus_client: ModbusClient, state: ConnectionState
-) -> tuple[bool, Optional[float]]:
+def handle_modbus_connection(modbus_client: ModbusClient, state: ConnectionState) -> tuple[bool, float | None]:
     """
     Handle Modbus connection and Model 160 verification.
 
@@ -104,7 +103,7 @@ def handle_modbus_connection(
 
 def handle_mqtt_connection(
     mqtt_publisher: MQTTPublisher, state: ConnectionState, config: Config
-) -> tuple[bool, Optional[float]]:
+) -> tuple[bool, float | None]:
     """
     Handle MQTT connection and discovery message publishing.
 
@@ -133,7 +132,7 @@ def handle_mqtt_connection(
                 logger.info("Discovery messages published successfully")
             else:
                 logger.warning("Failed to publish some discovery messages")
-            
+
             # Publish diagnostic sensor discovery messages if enabled
             # Use actual module count if available, otherwise use default of 2
             if config.diagnostic_sensors_enabled:
@@ -147,7 +146,7 @@ def handle_mqtt_connection(
                     operating_state_enabled=config.operating_state_sensors_enabled,
                     operating_state_default=config.operating_state_sensors_default_enabled,
                     module_events_enabled=config.module_events_sensors_enabled,
-                    module_events_default=config.module_events_sensors_default_enabled
+                    module_events_default=config.module_events_sensors_default_enabled,
                 ):
                     logger.info("Diagnostic discovery messages published successfully")
                     if state.actual_module_count is not None:
@@ -187,17 +186,18 @@ def handle_data_polling(
 
     if mppt_data:
         # Check if we need to update diagnostic discovery with actual module count
-        if (config.diagnostic_sensors_enabled and 
-            state.mqtt_connected and 
-            mppt_data.modules and 
-            not state.diagnostic_discovery_published and
-            state.device_info):
-            
+        if (
+            config.diagnostic_sensors_enabled
+            and state.mqtt_connected
+            and mppt_data.modules
+            and not state.diagnostic_discovery_published
+            and state.device_info
+        ):
             actual_count = len(mppt_data.modules)
             if state.actual_module_count != actual_count:
                 logger.info(f"Detected {actual_count} MPPT modules, updating diagnostic discovery...")
                 state.actual_module_count = actual_count
-                
+
                 if mqtt_publisher.publish_diagnostic_discovery(
                     state.device_info,
                     actual_count,
@@ -206,7 +206,7 @@ def handle_data_polling(
                     operating_state_enabled=config.operating_state_sensors_enabled,
                     operating_state_default=config.operating_state_sensors_default_enabled,
                     module_events_enabled=config.module_events_sensors_enabled,
-                    module_events_default=config.module_events_sensors_default_enabled
+                    module_events_default=config.module_events_sensors_default_enabled,
                 ):
                     logger.info("Updated diagnostic discovery messages with actual module count")
                     state.diagnostic_discovery_published = True
@@ -223,7 +223,7 @@ def handle_data_polling(
                     logger.warning("MQTT connection lost, will attempt reconnection")
                     state.mqtt_connected = False
                     state.diagnostic_discovery_published = False  # Reset diagnostic discovery flag
-            
+
             # Publish diagnostic data if enabled and available
             if config.diagnostic_sensors_enabled and mppt_data.modules:
                 diagnostic_data = [module.diagnostics for module in mppt_data.modules]
@@ -323,9 +323,7 @@ class FroniusBridgeController:
                 handle_data_polling(self.modbus_client, self.mqtt_publisher, state, self.config)
 
                 # Calculate sleep time and prevent drift
-                sleep_time, next_poll_time = calculate_sleep_time(
-                    next_poll_time, self.config.poll_interval
-                )
+                sleep_time, next_poll_time = calculate_sleep_time(next_poll_time, self.config.poll_interval)
 
                 if sleep_time > 0:
                     time.sleep(sleep_time)
