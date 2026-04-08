@@ -91,15 +91,28 @@ def _text(
 CONFIG_ENTITIES: list[dict[str, Any]] = [
     # Diagnostic sensor
     _sensor("fronius_uptime", "Controller Uptime", "uptime", "s", None, "total_increasing", "diagnostic"),
-    # Modbus configuration
+    # Modbus configuration (writable from HA)
     _text("fronius_modbus_host", "Modbus Host", "modbus_host"),
     _number("fronius_modbus_port", "Modbus Port", "modbus_port", 1, 65535, 1, ""),
     _number("fronius_modbus_unit_id", "Modbus Unit ID", "modbus_unit_id", 0, 255, 1, ""),
     _number("fronius_modbus_timeout", "Modbus Timeout", "modbus_timeout", 1, 120, 1, "s"),
-    # Application configuration
+    # Application configuration (writable from HA)
     _number("fronius_poll_interval", "Poll Interval", "poll_interval", 1, 300, 1, "s"),
     _number("fronius_mqtt_republish_rate", "MQTT Republish Rate", "mqtt_republish_rate", 60, 3600, 1, "s"),
 ]
+
+# Map: command topic slug → (config_section, config_key, type_cast)
+_SLUG_TO_CONFIG: dict[str, tuple[str, str, type]] = {
+    "modbus_host": ("modbus", "host", str),
+    "modbus_port": ("modbus", "port", int),
+    "modbus_unit_id": ("modbus", "unit_id", int),
+    "modbus_timeout": ("modbus", "timeout", int),
+    "poll_interval": ("application", "poll_interval", int),
+    "mqtt_republish_rate": ("application", "mqtt_republish_rate", int),
+}
+
+# Slugs that should trigger a Modbus reconnect when changed
+_MODBUS_RECONNECT_SLUGS = {"modbus_host", "modbus_port", "modbus_unit_id", "modbus_timeout"}
 
 
 class MQTTPublisher:
@@ -133,6 +146,9 @@ class MQTTPublisher:
         self._topic_prefix = topic_prefix
         self._connected = False
         self._device_id: str | None = None  # Store device ID for state topics
+        self._device: dict[str, Any] | None = None
+        self._config = None  # Set via set_config() for runtime updates
+        self._modbus_reconnect_callback = None  # Set via set_modbus_reconnect_callback()
 
         # Create paho-mqtt client instance (using latest callback API version)
         self._client = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2, client_id=self._client_id)
@@ -144,6 +160,15 @@ class MQTTPublisher:
         # Set up callbacks
         self._client.on_connect = self._on_connect
         self._client.on_disconnect = self._on_disconnect
+        self._client.on_message = self._on_message
+
+    def set_config(self, config) -> None:
+        """Set the Config instance for runtime updates from HA commands."""
+        self._config = config
+
+    def set_modbus_reconnect_callback(self, callback) -> None:
+        """Set callback to trigger Modbus reconnect when connection params change."""
+        self._modbus_reconnect_callback = callback
 
     def _on_connect(
         self,
@@ -172,6 +197,68 @@ class MQTTPublisher:
         """Callback for when the client disconnects from the broker."""
         logger.warning(f"MQTT disconnected with code {reason_code}")
         self._connected = False
+
+    def _on_message(self, client: mqtt.Client, userdata: any, msg: mqtt.MQTTMessage) -> None:
+        """Handle incoming MQTT messages (config commands from HA)."""
+        if not self._config or not self._device_id:
+            return
+
+        topic = msg.topic
+        payload = msg.payload.decode("utf-8", errors="replace").strip()
+        prefix = self._topic_prefix
+        device_id = self._device_id
+
+        # Match command topics: {prefix}/{component}/{device_id}/{slug}/set
+        for entity in CONFIG_ENTITIES:
+            component = entity.get("component", "")
+            if component not in ("number", "text"):
+                continue
+            slug = entity["slug"]
+            expected = f"{prefix}/{component}/{device_id}/{slug}/set"
+            if topic != expected:
+                continue
+
+            if slug not in _SLUG_TO_CONFIG:
+                logger.warning("No config mapping for slug %s", slug)
+                return
+
+            section, key, cast = _SLUG_TO_CONFIG[slug]
+            try:
+                value = cast(float(payload)) if cast in (int,) else cast(payload)
+            except ValueError, TypeError:
+                logger.warning("Invalid value for %s: %s", slug, payload)
+                return
+
+            # Update config and persist
+            if section == "modbus":
+                self._config.update_modbus(key, value)
+            elif section == "application":
+                self._config.update_application(key, value)
+
+            # Echo new value back to state topic
+            state_topic = f"{prefix}/{entity['component']}/{device_id}/{slug}/state"
+            self._client.publish(state_topic, str(value), qos=1, retain=True)
+            logger.info("Config %s.%s set to %s from HA", section, key, value)
+
+            # Trigger Modbus reconnect if connection params changed
+            if slug in _MODBUS_RECONNECT_SLUGS and self._modbus_reconnect_callback:
+                logger.info("Modbus connection config changed (%s), triggering reconnect", slug)
+                self._modbus_reconnect_callback()
+            return
+
+    def subscribe_config_commands(self) -> None:
+        """Subscribe to command topics for all writable config entities."""
+        if not self._connected or not self._device_id:
+            return
+        prefix = self._topic_prefix
+        device_id = self._device_id
+        for entity in CONFIG_ENTITIES:
+            component = entity["component"]
+            if component in ("number", "text"):
+                slug = entity["slug"]
+                topic = f"{prefix}/{component}/{device_id}/{slug}/set"
+                self._client.subscribe(topic, qos=1)
+                logger.debug("Subscribed to config command: %s", topic)
 
     def connect(self) -> bool:
         """

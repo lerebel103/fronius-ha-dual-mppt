@@ -1,9 +1,12 @@
 """Configuration management for Fronius Modbus to MQTT bridge."""
 
+import logging
 import os
 from typing import Any
 
 import yaml
+
+logger = logging.getLogger(__name__)
 
 
 class ConfigValidationError(Exception):
@@ -26,6 +29,8 @@ class Config:
             FileNotFoundError: If config file doesn't exist
             yaml.YAMLError: If config file is malformed
         """
+        self._config_path = config_path
+
         if not os.path.exists(config_path):
             raise FileNotFoundError(f"Configuration file not found: {config_path}")
 
@@ -37,6 +42,24 @@ class Config:
 
         # Validate configuration on initialization
         self.validate()
+
+    def save(self) -> None:
+        """Persist current configuration to the YAML file."""
+        with open(self._config_path, "w") as f:
+            yaml.dump(self._config, f, default_flow_style=False, sort_keys=False)
+        logger.info("Configuration saved to %s", self._config_path)
+
+    def update_modbus(self, key: str, value: Any) -> None:
+        """Update a modbus config value, save, and log."""
+        self._config["modbus"][key] = value
+        self.save()
+        logger.info("Config modbus.%s updated to %s", key, value)
+
+    def update_application(self, key: str, value: Any) -> None:
+        """Update an application config value, save, and log."""
+        self._config["application"][key] = value
+        self.save()
+        logger.info("Config application.%s updated to %s", key, value)
 
     def validate(self) -> bool:
         """

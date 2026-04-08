@@ -157,6 +157,9 @@ def handle_mqtt_connection(
             # Publish current config state
             mqtt_publisher.publish_config_state(config)
 
+            # Subscribe to config command topics from HA
+            mqtt_publisher.subscribe_config_commands()
+
         return True, None
     else:
         # Connection failed, apply exponential backoff
@@ -302,12 +305,34 @@ class FroniusBridgeController:
             topic_prefix=config.mqtt_topic_prefix,
         )
 
+        # Wire config and reconnect callback for HA command handling
+        self.mqtt_publisher.set_config(config)
+        self.mqtt_publisher.set_modbus_reconnect_callback(self._trigger_modbus_reconnect)
+        self._state: ConnectionState | None = None
+
+    def _trigger_modbus_reconnect(self) -> None:
+        """Callback to trigger Modbus reconnect when config changes from HA."""
+        if self._state:
+            logger.info("Triggering Modbus reconnect due to config change")
+            self.modbus_client.disconnect()
+            self._state.modbus_connected = False
+            self._state.model_160_verified = False
+            self._state.modbus_retry_count = 0
+            # Recreate Modbus client with new config values
+            self.modbus_client = ModbusClient(
+                host=self.config.modbus_host,
+                port=self.config.modbus_port,
+                unit_id=self.config.modbus_unit_id,
+                timeout=self.config.modbus_timeout,
+            )
+
     def run(self) -> None:
         """
         Run the main polling loop with resilient connection handling.
         """
         state = ConnectionState()
         state.start_time = time.time()
+        self._state = state
 
         # Track absolute time reference to prevent drift
         next_poll_time = time.time()
