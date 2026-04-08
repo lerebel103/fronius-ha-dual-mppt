@@ -11,6 +11,7 @@ import sys
 
 from .config import Config, ConfigValidationError
 from .controller import FroniusBridgeController
+from .version import __version__
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,10 @@ Examples:
 
     # Setup logging
     setup_logging(config.log_level)
-    logger.info("Fronius Dual MPPT to HA MQTT Bridge starting")
+
+    # Log version — strip leading 'v' if present to avoid "v v0.1.0"
+    version_display = __version__.lstrip("v") if __version__ else "dev"
+    logger.info("Fronius Dual MPPT to HA MQTT Bridge v%s starting", version_display)
 
     # Create and run controller
     controller = FroniusBridgeController(config)
