@@ -6,7 +6,7 @@ import tempfile
 import pytest
 import yaml
 
-from fronius_modbus.config import Config, ConfigValidationError
+from app.config import Config, ConfigValidationError
 
 
 class TestConfigLoading:

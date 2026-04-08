@@ -6,10 +6,10 @@ import os
 import tempfile
 from unittest.mock import Mock, patch
 
-from fronius_modbus.config import Config
-from fronius_modbus.controller import FroniusBridgeController
-from fronius_modbus.modbus_client import ModbusClient
-from fronius_modbus.mqtt_publisher import MQTTPublisher
+from app.config import Config
+from app.controller import FroniusBridgeController
+from app.modbus_client import ModbusClient
+from app.mqtt_publisher import MQTTPublisher
 
 
 class TestBasicFunctionality:

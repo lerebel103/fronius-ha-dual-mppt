@@ -2,13 +2,101 @@
 
 import json
 import logging
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import paho.mqtt.client as mqtt
 
 from .modbus_client import MPPTData, DiagnosticData
+from .version import __version__
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Entity helper builders (mirrors the pattern from gw-charger-controller)
+# ---------------------------------------------------------------------------
+
+def _sensor(
+    unique_id: str,
+    name: str,
+    slug: str,
+    unit: str,
+    device_class: Optional[str] = None,
+    state_class: Optional[str] = None,
+    entity_category: Optional[str] = None,
+) -> Dict[str, Any]:
+    d: Dict[str, Any] = {
+        "component": "sensor",
+        "unique_id": unique_id,
+        "name": name,
+        "slug": slug,
+        "unit_of_measurement": unit,
+        "force_update": True,
+    }
+    if device_class:
+        d["device_class"] = device_class
+    if state_class:
+        d["state_class"] = state_class
+    if entity_category:
+        d["entity_category"] = entity_category
+    return d
+
+
+def _number(
+    unique_id: str,
+    name: str,
+    slug: str,
+    min_val: float,
+    max_val: float,
+    step: float,
+    unit: str,
+    mode: str = "box",
+    entity_category: str = "config",
+) -> Dict[str, Any]:
+    d: Dict[str, Any] = {
+        "component": "number",
+        "unique_id": unique_id,
+        "name": name,
+        "slug": slug,
+        "min": min_val,
+        "max": max_val,
+        "step": step,
+        "unit_of_measurement": unit,
+        "entity_category": entity_category,
+    }
+    if mode != "auto":
+        d["mode"] = mode
+    return d
+
+
+def _text(
+    unique_id: str,
+    name: str,
+    slug: str,
+    entity_category: str = "config",
+) -> Dict[str, Any]:
+    return {
+        "component": "text",
+        "unique_id": unique_id,
+        "name": name,
+        "slug": slug,
+        "entity_category": entity_category,
+    }
+
+
+# Configuration and diagnostic entities (published alongside core MPPT sensors)
+CONFIG_ENTITIES: List[Dict[str, Any]] = [
+    # Diagnostic sensor
+    _sensor("fronius_uptime", "Controller Uptime", "uptime", "s", None, "total_increasing", "diagnostic"),
+    # Modbus configuration
+    _text("fronius_modbus_host", "Modbus Host", "modbus_host"),
+    _number("fronius_modbus_port", "Modbus Port", "modbus_port", 1, 65535, 1, ""),
+    _number("fronius_modbus_unit_id", "Modbus Unit ID", "modbus_unit_id", 0, 255, 1, ""),
+    _number("fronius_modbus_timeout", "Modbus Timeout", "modbus_timeout", 1, 120, 1, "s"),
+    # Application configuration
+    _number("fronius_poll_interval", "Poll Interval", "poll_interval", 1, 300, 1, "s"),
+    _number("fronius_mqtt_republish_rate", "MQTT Republish Rate", "mqtt_republish_rate", 60, 3600, 1, "s"),
+]
 
 
 class MQTTPublisher:
@@ -178,7 +266,9 @@ class MQTTPublisher:
                 "manufacturer": manufacturer,
                 "model": model,
                 "serial_number": serial,
+                "sw_version": __version__,
             }
+            self._device = device
 
             # Define all sensors (PV1/2 voltage, current, power + total power)
             sensors = [
@@ -272,10 +362,85 @@ class MQTTPublisher:
                 logger.debug(f"Published discovery for {sensor_id}")
 
             logger.info(f"Published discovery messages for {len(sensors)} sensors")
+
+            # Publish config and diagnostic entity discovery
+            self._publish_config_discovery(device)
+
             return True
 
         except Exception as e:
             logger.error(f"Error publishing discovery messages: {e}")
+            return False
+
+    def _publish_config_discovery(self, device: Dict[str, Any]) -> None:
+        """Publish HA discovery for config number/text entities and uptime diagnostic sensor."""
+        device_id = self._device_id
+        prefix = self._topic_prefix
+
+        for entity in CONFIG_ENTITIES:
+            component = entity["component"]
+            unique_id = entity["unique_id"]
+            slug = entity["slug"]
+
+            discovery_topic = f"{prefix}/{component}/{device_id}_{unique_id}/config"
+            state_topic = f"{prefix}/{component}/{device_id}/{slug}/state"
+
+            payload: Dict[str, Any] = {
+                "name": entity["name"],
+                "unique_id": f"{device_id}_{unique_id}",
+                "object_id": f"{device_id}_{unique_id}",
+                "state_topic": state_topic,
+                "device": device,
+            }
+
+            # Optional fields
+            for key in ("unit_of_measurement", "device_class", "state_class",
+                        "entity_category", "min", "max", "step", "mode", "force_update"):
+                if key in entity:
+                    payload[key] = entity[key]
+
+            # Command topic for writable entities (number, text)
+            if component in ("number", "text"):
+                payload["command_topic"] = f"{prefix}/{component}/{device_id}/{slug}/set"
+
+            self._client.publish(discovery_topic, json.dumps(payload), qos=1, retain=True)
+            logger.debug(f"Published config discovery for {unique_id}")
+
+        logger.info(f"Published config/diagnostic discovery for {len(CONFIG_ENTITIES)} entities")
+
+    def publish_uptime(self, uptime_seconds: int) -> bool:
+        """Publish controller uptime diagnostic sensor value."""
+        if not self._connected or not self._device_id:
+            return False
+        try:
+            topic = f"{self._topic_prefix}/sensor/{self._device_id}/uptime/state"
+            result = self._client.publish(topic, str(uptime_seconds), qos=0, retain=False)
+            return result.rc == mqtt.MQTT_ERR_SUCCESS
+        except Exception as e:
+            logger.warning(f"Failed to publish uptime: {e}")
+            return False
+
+    def publish_config_state(self, config) -> bool:
+        """Publish current configuration values to their state topics."""
+        if not self._connected or not self._device_id:
+            return False
+        try:
+            device_id = self._device_id
+            prefix = self._topic_prefix
+            pairs = [
+                (f"{prefix}/text/{device_id}/modbus_host/state", str(config.modbus_host)),
+                (f"{prefix}/number/{device_id}/modbus_port/state", str(config.modbus_port)),
+                (f"{prefix}/number/{device_id}/modbus_unit_id/state", str(config.modbus_unit_id)),
+                (f"{prefix}/number/{device_id}/modbus_timeout/state", str(config.modbus_timeout)),
+                (f"{prefix}/number/{device_id}/poll_interval/state", str(config.poll_interval)),
+                (f"{prefix}/number/{device_id}/mqtt_republish_rate/state", str(config.mqtt_republish_rate)),
+            ]
+            for topic, value in pairs:
+                self._client.publish(topic, value, qos=1, retain=True)
+            logger.debug("Published config state for all configuration entities")
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to publish config state: {e}")
             return False
 
     def publish_diagnostic_discovery(self, device_info: Dict[str, str], num_modules: int, 

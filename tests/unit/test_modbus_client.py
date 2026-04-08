@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from fronius_modbus.modbus_client import (
+from app.modbus_client import (
     ModbusClient, 
     MPPTChannelData, 
     MPPTData,

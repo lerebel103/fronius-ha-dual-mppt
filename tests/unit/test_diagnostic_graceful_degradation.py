@@ -7,8 +7,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from fronius_modbus.modbus_client import ModbusClient, DiagnosticData, MPPTModuleData
-from fronius_modbus.mqtt_publisher import MQTTPublisher
+from app.modbus_client import ModbusClient, DiagnosticData, MPPTModuleData
+from app.mqtt_publisher import MQTTPublisher
 
 
 class TestDiagnosticGracefulDegradation:

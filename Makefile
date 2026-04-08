@@ -1,6 +1,5 @@
-# Makefile for Fronius Modbus to MQTT Bridge
-
 # Variables
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 IMAGE_NAME = fronius-ha-dual-mppt
 IMAGE_TAG = latest
 CONTAINER_NAME = fronius-ha-dual-mppt
@@ -18,14 +17,14 @@ help:
 	@echo "  logs        - View application logs"
 	@echo "  test        - Run all tests (unit and property)"
 	@echo "  lint        - Run linting checks"
-	@echo "  format      - Format code with black and isort"
+	@echo "  format      - Format code with ruff"
 	@echo "  clean       - Clean up Docker images and containers"
 
 # Build Docker image
 .PHONY: build
 build:
-	@echo "Building Docker image..."
-	docker build -t $(IMAGE_NAME):$(IMAGE_TAG) .
+	@echo "Building Docker image (version: $(VERSION))..."
+	docker build --build-arg VERSION=$(VERSION) -t $(IMAGE_NAME):$(IMAGE_TAG) .
 	@echo "Build complete: $(IMAGE_NAME):$(IMAGE_TAG)"
 
 # Build multi-architecture Docker images
@@ -38,7 +37,8 @@ build-multi:
 	docker buildx build \
 		--platform linux/amd64,linux/arm64 \
 		--tag $(DOCKER_USER)/$(IMAGE_NAME):$(IMAGE_TAG) \
-		--tag $(DOCKER_USER)/$(IMAGE_NAME):$$(date +%Y%m%d) \
+		--tag $(DOCKER_USER)/$(IMAGE_NAME):$(VERSION) \
+		--build-arg VERSION=$(VERSION) \
 		--load \
 		.
 	@echo "Multi-architecture build complete"
@@ -52,10 +52,12 @@ push:
 	docker buildx build \
 		--platform linux/amd64,linux/arm64 \
 		--tag $(DOCKER_USER)/$(IMAGE_NAME):$(IMAGE_TAG) \
-		--tag $(DOCKER_USER)/$(IMAGE_NAME):$$(date +%Y%m%d) \
+		--tag $(DOCKER_USER)/$(IMAGE_NAME):$(VERSION) \
+		--build-arg VERSION=$(VERSION) \
 		--push \
 		.
 	@echo "Images pushed successfully to $(DOCKER_USER)/$(IMAGE_NAME)"
+
 # Start application with docker-compose
 .PHONY: up start
 up start:
@@ -66,44 +68,45 @@ up start:
 	fi
 	docker-compose up -d
 	@echo "Application started. Use 'make logs' to view output."
+
 # Stop application with docker-compose
 .PHONY: down stop
 down stop:
 	@echo "Stopping Fronius Modbus Bridge..."
 	docker-compose down
 	@echo "Application stopped."
+
 # View application logs
 .PHONY: logs
 logs:
 	@echo "Showing logs for Fronius Modbus Bridge (Ctrl+C to exit)..."
 	docker-compose logs -f fronius-bridge
+
 # Run all tests (unit and property)
 .PHONY: test
 test:
 	@echo "Running all tests..."
 	python -m pytest tests/ -v
 	@echo "All tests completed."
+
 # Run linting checks
 .PHONY: lint
 lint:
 	@echo "Running linting checks..."
-	@echo "Running flake8..."
-	python -m flake8 src/ tests/
-	@echo "Running black --check..."
-	python -m black --check src/ tests/
-	@echo "Running isort --check..."
-	python -m isort --check-only src/ tests/
-	@echo "Running mypy..."
-	python -m mypy src/
+	@echo "Running ruff check..."
+	python -m ruff check app/ tests/
+	@echo "Running ruff format --check..."
+	python -m ruff format --check app/ tests/
 	@echo "All linting checks passed."
-# Format code with black and isort
+
+# Format code with ruff
 .PHONY: format
 format:
 	@echo "Formatting code..."
-	@echo "Running black..."
-	python -m black src/ tests/
-	@echo "Running isort..."
-	python -m isort src/ tests/
+	@echo "Running ruff format..."
+	python -m ruff format app/ tests/
+	@echo "Running ruff check --fix..."
+	python -m ruff check --fix app/ tests/
 	@echo "Code formatting complete."
 
 # Clean up Docker images and containers

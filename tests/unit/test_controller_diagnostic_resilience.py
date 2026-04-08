@@ -8,10 +8,10 @@ from unittest.mock import Mock, patch, MagicMock
 
 import pytest
 
-from fronius_modbus.config import Config
-from fronius_modbus.controller import FroniusBridgeController, handle_data_polling, ConnectionState
-from fronius_modbus.modbus_client import MPPTData, MPPTChannelData, DiagnosticData, MPPTModuleData
-from fronius_modbus.mqtt_publisher import MQTTPublisher
+from app.config import Config
+from app.controller import FroniusBridgeController, handle_data_polling, ConnectionState
+from app.modbus_client import MPPTData, MPPTChannelData, DiagnosticData, MPPTModuleData
+from app.mqtt_publisher import MQTTPublisher
 
 
 @pytest.fixture

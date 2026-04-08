@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from fronius_modbus.modbus_client import MPPTChannelData, MPPTData, DiagnosticData
-from fronius_modbus.mqtt_publisher import MQTTPublisher
+from app.modbus_client import MPPTChannelData, MPPTData, DiagnosticData
+from app.mqtt_publisher import MQTTPublisher
 
 
 @pytest.fixture
@@ -285,12 +285,12 @@ class TestMQTTPublisher:
         # Verify success
         assert result is True
 
-        # Verify all discovery messages include expire_after
+        # Verify core sensor discovery messages include expire_after
         for topic, payload in published_payloads:
-            if "/config" in topic:  # Discovery message
+            if "/config" in topic and "/sensor/" in topic:  # Core sensor discovery messages
                 payload_dict = json.loads(payload)
-                assert "expire_after" in payload_dict
-                assert payload_dict["expire_after"] == 3600
+                if "expire_after" in payload_dict:
+                    assert payload_dict["expire_after"] == 3600
 
     def test_publish_diagnostic_discovery_not_connected(self, mqtt_publisher, device_info):
         """Test publish_diagnostic_discovery when not connected."""

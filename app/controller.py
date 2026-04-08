@@ -28,8 +28,9 @@ class ConnectionState:
     modbus_retry_count: int = 0
     mqtt_retry_count: int = 0
     model_160_retry_count: int = 0
-    diagnostic_discovery_published: bool = False  # Track if diagnostic discovery was published
-    actual_module_count: Optional[int] = None  # Store actual module count from device
+    diagnostic_discovery_published: bool = False
+    actual_module_count: Optional[int] = None
+    start_time: float = 0.0  # Track controller start time for uptime
 
 
 def exponential_backoff(attempt: int, max_delay: int = 60) -> int:
@@ -153,6 +154,10 @@ def handle_mqtt_connection(
                         state.diagnostic_discovery_published = True
                 else:
                     logger.warning("Failed to publish some diagnostic discovery messages")
+
+            # Publish current config state
+            mqtt_publisher.publish_config_state(config)
+
         return True, None
     else:
         # Connection failed, apply exponential backoff
@@ -225,6 +230,11 @@ def handle_data_polling(
                 if not mqtt_publisher.publish_diagnostic_data(diagnostic_data):
                     logger.warning("Failed to publish diagnostic data to MQTT")
                     # Don't mark MQTT as disconnected for diagnostic failures
+
+            # Publish uptime
+            if state.start_time > 0:
+                uptime_s = int(time.time() - state.start_time)
+                mqtt_publisher.publish_uptime(uptime_s)
         else:
             logger.debug("MQTT not connected, skipping data publish")
     else:
@@ -288,6 +298,7 @@ class FroniusBridgeController:
         Run the main polling loop with resilient connection handling.
         """
         state = ConnectionState()
+        state.start_time = time.time()
 
         # Track absolute time reference to prevent drift
         next_poll_time = time.time()

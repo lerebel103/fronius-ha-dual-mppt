@@ -1,43 +1,31 @@
-# Dockerfile for Fronius HA Dual MPPT
-FROM python:3.9-slim
+FROM python:3.14-slim
 
-# Set working directory
 WORKDIR /app
 
-# Create non-root user for security
 RUN groupadd -r lerebel103 && useradd -r -g lerebel103 lerebel103
 
-# Install system dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better Docker layer caching
 COPY requirements.txt .
 
-# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application source code
-COPY src/ ./src/
+COPY app/ ./app/
 
-# Create config directory and set permissions
+ARG VERSION=dev
+RUN printf '"""Version of the Fronius MPPT bridge."""\n\n__version__ = "%s"\n' "${VERSION}" > app/version.py
+
 RUN mkdir -p /etc/fronius-ha-dual-mppt && \
     chown -R lerebel103:lerebel103 /app /etc/fronius-ha-dual-mppt
 
-# Switch to non-root user
 USER lerebel103
 
-# Set Python path to include src directory
-ENV PYTHONPATH=/app/src
+ENV PYTHONPATH=/app
 
-# Default command - run with config from mounted volume
-CMD ["python", "-m", "fronius_modbus", "--config", "/etc/fronius-ha-dual-mppt/config.yaml"]
+CMD ["python", "-m", "app", "--config", "/etc/fronius-ha-dual-mppt/config.yaml"]
 
-# Expose no ports (this is an MQTT client, not a server)
-# Health check could be added later if needed
-
-# Labels for metadata
 LABEL maintainer="lerebel103"
 LABEL description="Fronius HA Dual MPPT bridge for Home Assistant"
-LABEL version="1.0.0"
+LABEL version="${VERSION}"
