@@ -176,6 +176,12 @@ class ModbusClient:
             # Perform device scan to discover available models
             self._device.scan()
 
+            # scan() opens a connection to read the models and then disconnects
+            # at the end, leaving the socket closed. Explicitly (re)establish a
+            # persistent connection so subsequent reads reuse the same socket
+            # instead of reconnecting (and re-resolving DNS) on every poll.
+            self._device.connect()
+
             self._connected = True
             logger.info("Modbus connection established successfully")
             return True
@@ -190,7 +196,10 @@ class ModbusClient:
         """Disconnect from the inverter."""
         if self._device:
             try:
-                self._device.close()
+                # Use disconnect() (not close()) to actually tear down the TCP
+                # socket. For the TCP device, close() is a no-op inherited from
+                # the base class, which would leak the socket on reconnect.
+                self._device.disconnect()
             except Exception as e:
                 logger.warning(f"Error during disconnect: {e}")
             finally:
