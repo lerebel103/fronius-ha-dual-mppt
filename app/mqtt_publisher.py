@@ -145,6 +145,7 @@ class MQTTPublisher:
         self._client_id = client_id
         self._topic_prefix = topic_prefix
         self._connected = False
+        self._last_error: str | None = None
         self._device_id: str | None = None  # Store device ID for state topics
         self._device: dict[str, Any] | None = None
         self._config = None  # Set via set_config() for runtime updates
@@ -161,6 +162,11 @@ class MQTTPublisher:
         self._client.on_connect = self._on_connect
         self._client.on_disconnect = self._on_disconnect
         self._client.on_message = self._on_message
+
+    @property
+    def last_error(self) -> str | None:
+        """Return the most recent connection error message, if any."""
+        return self._last_error
 
     def set_config(self, config) -> None:
         """Set the Config instance for runtime updates from HA commands."""
@@ -180,10 +186,11 @@ class MQTTPublisher:
     ) -> None:
         """Callback for when the client connects to the broker."""
         if reason_code == 0:
-            logger.info("MQTT connected successfully")
+            logger.debug("MQTT connection established (broker acknowledged)")
             self._connected = True
         else:
-            logger.error(f"MQTT connection failed with code {reason_code}")
+            self._last_error = f"broker refused (code {reason_code})"
+            logger.debug(f"MQTT connection failed with code {reason_code}")
             self._connected = False
 
     def _on_disconnect(
@@ -225,7 +232,7 @@ class MQTTPublisher:
             section, key, cast = _SLUG_TO_CONFIG[slug]
             try:
                 value = cast(float(payload)) if cast in (int,) else cast(payload)
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 logger.warning("Invalid value for %s: %s", slug, payload)
                 return
 
@@ -268,16 +275,18 @@ class MQTTPublisher:
             True if connection successful, False otherwise
         """
         try:
-            logger.info(f"Attempting MQTT connection to {self._broker}:{self._port}")
+            logger.debug(f"Attempting MQTT connection to {self._broker}:{self._port}")
 
             # Reset connection state
             self._connected = False
+            self._last_error = None
 
             # Start the connection
             result = self._client.connect(self._broker, self._port, keepalive=60)
 
             if result != mqtt.MQTT_ERR_SUCCESS:
-                logger.error(f"MQTT connection initiation failed with code {result}")
+                self._last_error = f"initiation failed (code {result})"
+                logger.debug(f"MQTT connection initiation failed with code {result}")
                 return False
 
             # Start the network loop
@@ -289,19 +298,26 @@ class MQTTPublisher:
             timeout = 10  # 10 second timeout
             start_time = time.time()
 
-            while not self._connected and (time.time() - start_time) < timeout:
+            # Wait until connected, the broker refuses (_on_connect sets _last_error),
+            # or the timeout elapses. Breaking on a refusal avoids blocking the full
+            # timeout on auth/ACL failures where the broker responds immediately.
+            while not self._connected and self._last_error is None and (time.time() - start_time) < timeout:
                 time.sleep(0.1)  # Check every 100ms
 
             if self._connected:
-                logger.info("MQTT connection established successfully")
+                self._last_error = None
+                logger.debug("MQTT connection established successfully")
                 return True
             else:
-                logger.error("MQTT connection timeout - connection not established within 10 seconds")
+                if not self._last_error:
+                    self._last_error = "connection timeout (no response within 10s)"
+                logger.debug("MQTT connection timeout - connection not established within 10 seconds")
                 self._client.loop_stop()
                 return False
 
         except Exception as e:
-            logger.error(f"MQTT connection failed: {e}")
+            self._last_error = str(e)
+            logger.debug(f"MQTT connection failed: {e}")
             self._connected = False
             return False
 

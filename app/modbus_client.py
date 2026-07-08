@@ -151,6 +151,12 @@ class ModbusClient:
         self._timeout = timeout
         self._device: modbus_client.SunSpecModbusClientDeviceTCP | None = None
         self._connected = False
+        self._last_error: str | None = None
+
+    @property
+    def last_error(self) -> str | None:
+        """Return the most recent connection error message, if any."""
+        return self._last_error
 
     def connect(self) -> bool:
         """
@@ -163,7 +169,7 @@ class ModbusClient:
             # Clean up any existing connection to avoid socket leaks
             self.disconnect()
 
-            logger.info(f"Attempting Modbus connection to {self._host}:{self._port} (unit_id={self._unit_id})")
+            logger.debug(f"Attempting Modbus connection to {self._host}:{self._port} (unit_id={self._unit_id})")
 
             # Create pysunspec2 device instance
             self._device = modbus_client.SunSpecModbusClientDeviceTCP(
@@ -176,13 +182,28 @@ class ModbusClient:
             # Perform device scan to discover available models
             self._device.scan()
 
+            # scan() opens a connection to read the models and then disconnects
+            # at the end, leaving the socket closed. Explicitly (re)establish a
+            # persistent connection so subsequent reads reuse the same socket
+            # instead of reconnecting (and re-resolving DNS) on every poll.
+            self._device.connect()
+
             self._connected = True
-            logger.info("Modbus connection established successfully")
+            self._last_error = None
+            logger.debug("Modbus connection established successfully")
             return True
 
         except Exception as e:
-            logger.error(f"Modbus connection failed: {e}")
+            self._last_error = str(e)
+            logger.debug(f"Modbus connection failed: {e}")
             self._connected = False
+            # Tear down any partially-open socket before dropping the reference,
+            # otherwise a failing (and retried) attempt can leak file descriptors.
+            if self._device is not None:
+                try:
+                    self._device.disconnect()
+                except Exception as disconnect_error:
+                    logger.warning(f"Error tearing down partial connection: {disconnect_error}")
             self._device = None
             return False
 
@@ -190,7 +211,10 @@ class ModbusClient:
         """Disconnect from the inverter."""
         if self._device:
             try:
-                self._device.close()
+                # Use disconnect() (not close()) to actually tear down the TCP
+                # socket. For the TCP device, close() is a no-op inherited from
+                # the base class, which would leak the socket on reconnect.
+                self._device.disconnect()
             except Exception as e:
                 logger.warning(f"Error during disconnect: {e}")
             finally:

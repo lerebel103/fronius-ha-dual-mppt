@@ -264,6 +264,47 @@ class TestModbusClient:
         result = modbus_client.read_mppt_data()
         assert result is None
 
+    @patch("sunspec2.modbus.client.SunSpecModbusClientDeviceTCP")
+    def test_connect_establishes_persistent_connection(self, mock_sunspec, modbus_client):
+        """connect() must open a persistent socket after scan (scan auto-disconnects)."""
+        mock_device = Mock()
+        mock_sunspec.return_value = mock_device
+
+        assert modbus_client.connect() is True
+
+        # scan() discovers models but closes the socket at the end; connect()
+        # must explicitly reopen it so reads reuse the same socket.
+        mock_device.scan.assert_called_once()
+        mock_device.connect.assert_called_once()
+        assert modbus_client.is_connected() is True
+
+    def test_disconnect_closes_socket(self, modbus_client):
+        """disconnect() must call device.disconnect() (not the no-op close())."""
+        mock_device = Mock()
+        modbus_client._device = mock_device
+        modbus_client._connected = True
+
+        modbus_client.disconnect()
+
+        mock_device.disconnect.assert_called_once()
+        mock_device.close.assert_not_called()
+        assert modbus_client.is_connected() is False
+        assert modbus_client._device is None
+
+    @patch("sunspec2.modbus.client.SunSpecModbusClientDeviceTCP")
+    def test_connect_failure_tears_down_partial_socket(self, mock_sunspec, modbus_client):
+        """A failure after the device is created must tear down its socket to avoid fd leaks."""
+        mock_device = Mock()
+        mock_device.scan.side_effect = Exception("scan failed after socket opened")
+        mock_sunspec.return_value = mock_device
+
+        assert modbus_client.connect() is False
+
+        # The partially-open socket must be disconnected before the reference is dropped.
+        mock_device.disconnect.assert_called_once()
+        assert modbus_client._device is None
+        assert modbus_client.is_connected() is False
+
     @pytest.fixture
     def mock_model_160_with_diagnostics(self):
         """Mock Model 160 with diagnostic fields available."""
