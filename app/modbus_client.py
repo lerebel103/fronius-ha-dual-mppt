@@ -189,6 +189,13 @@ class ModbusClient:
         except Exception as e:
             logger.error(f"Modbus connection failed: {e}")
             self._connected = False
+            # Tear down any partially-open socket before dropping the reference,
+            # otherwise a failing (and retried) attempt can leak file descriptors.
+            if self._device is not None:
+                try:
+                    self._device.disconnect()
+                except Exception as disconnect_error:
+                    logger.warning(f"Error tearing down partial connection: {disconnect_error}")
             self._device = None
             return False
 

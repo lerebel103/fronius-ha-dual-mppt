@@ -293,6 +293,20 @@ class TestModbusClient:
         assert modbus_client.is_connected() is False
         assert modbus_client._device is None
 
+    @patch("sunspec2.modbus.client.SunSpecModbusClientDeviceTCP")
+    def test_connect_failure_tears_down_partial_socket(self, mock_sunspec, modbus_client):
+        """A failure after the device is created must tear down its socket to avoid fd leaks."""
+        mock_device = Mock()
+        mock_device.scan.side_effect = Exception("scan failed after socket opened")
+        mock_sunspec.return_value = mock_device
+
+        assert modbus_client.connect() is False
+
+        # The partially-open socket must be disconnected before the reference is dropped.
+        mock_device.disconnect.assert_called_once()
+        assert modbus_client._device is None
+        assert modbus_client.is_connected() is False
+
     @pytest.fixture
     def mock_model_160_with_diagnostics(self):
         """Mock Model 160 with diagnostic fields available."""
