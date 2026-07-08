@@ -86,7 +86,7 @@ logs:
 .PHONY: test
 test:
 	@echo "Running all tests..."
-	python -m pytest tests/ -v
+	uv run pytest tests/ -v
 	@echo "All tests completed."
 
 # Run linting checks
@@ -94,9 +94,9 @@ test:
 lint:
 	@echo "Running linting checks..."
 	@echo "Running ruff check..."
-	python -m ruff check app/ tests/
+	uv run ruff check app/ tests/
 	@echo "Running ruff format --check..."
-	python -m ruff format --check app/ tests/
+	uv run ruff format --check app/ tests/
 	@echo "All linting checks passed."
 
 # Format code with ruff
@@ -104,9 +104,9 @@ lint:
 format:
 	@echo "Formatting code..."
 	@echo "Running ruff format..."
-	python -m ruff format app/ tests/
+	uv run ruff format app/ tests/
 	@echo "Running ruff check --fix..."
-	python -m ruff check --fix app/ tests/
+	uv run ruff check --fix app/ tests/
 	@echo "Code formatting complete."
 
 # Clean up Docker images and containers
