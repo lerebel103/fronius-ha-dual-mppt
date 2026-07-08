@@ -279,6 +279,7 @@ class MQTTPublisher:
 
             # Reset connection state
             self._connected = False
+            self._last_error = None
 
             # Start the connection
             result = self._client.connect(self._broker, self._port, keepalive=60)
@@ -297,7 +298,10 @@ class MQTTPublisher:
             timeout = 10  # 10 second timeout
             start_time = time.time()
 
-            while not self._connected and (time.time() - start_time) < timeout:
+            # Wait until connected, the broker refuses (_on_connect sets _last_error),
+            # or the timeout elapses. Breaking on a refusal avoids blocking the full
+            # timeout on auth/ACL failures where the broker responds immediately.
+            while not self._connected and self._last_error is None and (time.time() - start_time) < timeout:
                 time.sleep(0.1)  # Check every 100ms
 
             if self._connected:

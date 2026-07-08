@@ -99,6 +99,39 @@ application:
         assert not publisher.is_connected()
 
     @patch("paho.mqtt.client.Client")
+    def test_mqtt_connect_fails_fast_on_broker_refusal(self, mock_mqtt_client):
+        """A non-zero CONNACK (e.g. auth failure) should fail immediately, not wait 10s."""
+        import time
+
+        mock_client = Mock()
+        mock_client.connect.return_value = 0  # MQTT_ERR_SUCCESS
+        mock_mqtt_client.return_value = mock_client
+
+        publisher = MQTTPublisher(
+            broker="192.168.1.50",
+            port=1883,
+            username="test",
+            password="test",
+            client_id="test_client",
+            topic_prefix="homeassistant",
+        )
+
+        # Simulate the broker refusing the connection: starting the loop delivers a
+        # CONNACK with a non-zero reason code, which _on_connect records.
+        def refuse():
+            publisher._on_connect(mock_client, None, None, 5, None)  # 5 = not authorized
+
+        mock_client.loop_start.side_effect = refuse
+
+        start = time.time()
+        result = publisher.connect()
+        elapsed = time.time() - start
+
+        assert result is False
+        assert elapsed < 5  # returns well before the 10s no-response timeout
+        assert "broker refused" in (publisher.last_error or "")
+
+    @patch("paho.mqtt.client.Client")
     def test_mqtt_publish_when_not_connected(self, mock_mqtt_client):
         """Test that MQTTPublisher handles publishing when not connected."""
         mock_client = Mock()
