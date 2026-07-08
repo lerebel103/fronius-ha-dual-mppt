@@ -151,6 +151,12 @@ class ModbusClient:
         self._timeout = timeout
         self._device: modbus_client.SunSpecModbusClientDeviceTCP | None = None
         self._connected = False
+        self._last_error: str | None = None
+
+    @property
+    def last_error(self) -> str | None:
+        """Return the most recent connection error message, if any."""
+        return self._last_error
 
     def connect(self) -> bool:
         """
@@ -163,7 +169,7 @@ class ModbusClient:
             # Clean up any existing connection to avoid socket leaks
             self.disconnect()
 
-            logger.info(f"Attempting Modbus connection to {self._host}:{self._port} (unit_id={self._unit_id})")
+            logger.debug(f"Attempting Modbus connection to {self._host}:{self._port} (unit_id={self._unit_id})")
 
             # Create pysunspec2 device instance
             self._device = modbus_client.SunSpecModbusClientDeviceTCP(
@@ -183,11 +189,13 @@ class ModbusClient:
             self._device.connect()
 
             self._connected = True
-            logger.info("Modbus connection established successfully")
+            self._last_error = None
+            logger.debug("Modbus connection established successfully")
             return True
 
         except Exception as e:
-            logger.error(f"Modbus connection failed: {e}")
+            self._last_error = str(e)
+            logger.debug(f"Modbus connection failed: {e}")
             self._connected = False
             # Tear down any partially-open socket before dropping the reference,
             # otherwise a failing (and retried) attempt can leak file descriptors.

@@ -32,6 +32,13 @@ class ConnectionState:
     diagnostic_discovery_published: bool = False
     actual_module_count: int | None = None
     start_time: float = 0.0  # Track controller start time for uptime
+    # Edge-triggered error logging: track whether the start of an error condition
+    # has already been reported so sustained outages don't log every cycle.
+    modbus_failure_logged: bool = False
+    mqtt_failure_logged: bool = False
+    model_160_failure_logged: bool = False
+    modbus_down_since: float = 0.0
+    mqtt_down_since: float = 0.0
 
 
 def exponential_backoff(attempt: int, max_delay: int = 60) -> int:
@@ -65,15 +72,28 @@ def handle_modbus_connection(modbus_client: ModbusClient, state: ConnectionState
         return True, None
 
     if modbus_client.connect():
-        logger.info("Modbus connected successfully")
+        if state.modbus_failure_logged:
+            downtime = time.time() - state.modbus_down_since
+            logger.info(
+                f"Modbus connection restored after {downtime:.0f}s "
+                f"and {state.modbus_retry_count} failed attempt(s)"
+            )
+        else:
+            logger.info("Modbus connected successfully")
         state.modbus_connected = True
         state.modbus_retry_count = 0
+        state.modbus_failure_logged = False
+        state.modbus_down_since = 0.0
 
         # Verify Model 160 after connection
         if modbus_client.verify_model_160():
-            logger.info("Model 160 found and verified")
+            if state.model_160_failure_logged:
+                logger.info("Model 160 verification restored")
+            else:
+                logger.info("Model 160 found and verified")
             state.model_160_verified = True
             state.model_160_retry_count = 0
+            state.model_160_failure_logged = False
 
             # Read device info from Model 1
             state.device_info = modbus_client.read_device_info()
@@ -84,19 +104,34 @@ def handle_modbus_connection(modbus_client: ModbusClient, state: ConnectionState
                 )
             return True, None
         else:
-            logger.warning("Model 160 not found, will retry")
             state.modbus_connected = False
             state.model_160_verified = False
 
             # Apply exponential backoff for Model 160 verification
             delay = exponential_backoff(state.model_160_retry_count)
-            logger.info(f"Retrying Modbus connection in {delay} seconds...")
+            # Edge-triggered: warn once when the condition starts, then stay quiet.
+            if not state.model_160_failure_logged:
+                logger.warning("Model 160 not found on device; will keep retrying quietly until it appears")
+                state.model_160_failure_logged = True
+            else:
+                logger.debug(f"Model 160 still not found, retrying in {delay} seconds")
             state.model_160_retry_count += 1
             return False, delay
     else:
-        # Connection failed, apply exponential backoff
+        # Connection failed, apply exponential backoff.
         delay = exponential_backoff(state.modbus_retry_count)
-        logger.error(f"Modbus connection failed, retrying in {delay} seconds...")
+        # Edge-triggered logging: report the failure once at ERROR when it begins,
+        # then drop to DEBUG so a sustained outage (e.g. inverter asleep overnight)
+        # does not fill the log. Recovery is reported once on the success path above.
+        if not state.modbus_failure_logged:
+            logger.error(
+                f"Modbus connection lost ({modbus_client.last_error}); "
+                f"retrying with backoff, will report once restored"
+            )
+            state.modbus_failure_logged = True
+            state.modbus_down_since = time.time()
+        else:
+            logger.debug(f"Modbus still unreachable, retry in {delay}s (attempt {state.modbus_retry_count + 1})")
         state.modbus_retry_count += 1
         return False, delay
 
@@ -120,9 +155,18 @@ def handle_mqtt_connection(
         return True, None
 
     if mqtt_publisher.connect():
-        logger.info("MQTT connected successfully")
+        if state.mqtt_failure_logged:
+            downtime = time.time() - state.mqtt_down_since
+            logger.info(
+                f"MQTT connection restored after {downtime:.0f}s "
+                f"and {state.mqtt_retry_count} failed attempt(s)"
+            )
+        else:
+            logger.info("MQTT connected successfully")
         state.mqtt_connected = True
         state.mqtt_retry_count = 0
+        state.mqtt_failure_logged = False
+        state.mqtt_down_since = 0.0
         state.diagnostic_discovery_published = False  # Reset diagnostic discovery flag on reconnect
 
         # Publish discovery messages when MQTT connects
@@ -162,9 +206,18 @@ def handle_mqtt_connection(
 
         return True, None
     else:
-        # Connection failed, apply exponential backoff
+        # Connection failed, apply exponential backoff.
         delay = exponential_backoff(state.mqtt_retry_count)
-        logger.error(f"MQTT connection failed, retrying in {delay} seconds...")
+        # Edge-triggered: log the failure once at ERROR, then DEBUG for repeats.
+        if not state.mqtt_failure_logged:
+            logger.error(
+                f"MQTT connection lost ({mqtt_publisher.last_error}); "
+                f"retrying with backoff, will report once restored"
+            )
+            state.mqtt_failure_logged = True
+            state.mqtt_down_since = time.time()
+        else:
+            logger.debug(f"MQTT broker still unreachable, retry in {delay}s (attempt {state.mqtt_retry_count + 1})")
         state.mqtt_retry_count += 1
         return False, delay
 
@@ -220,10 +273,12 @@ def handle_data_polling(
         if state.mqtt_connected:
             # Proactive liveness check — detect silent disconnects before attempting publish
             if not mqtt_publisher.is_connected():
-                logger.warning("MQTT connection lost (detected before publish), will attempt reconnection")
+                logger.warning("MQTT connection lost (detected before publish); reconnecting")
                 state.mqtt_connected = False
                 state.mqtt_retry_count = 0
                 state.diagnostic_discovery_published = False
+                state.mqtt_failure_logged = True
+                state.mqtt_down_since = time.time()
                 return
 
             # Publish core sensor data
@@ -231,9 +286,11 @@ def handle_data_polling(
                 logger.warning("Failed to publish sensor data to MQTT")
                 # Check if MQTT is still connected
                 if not mqtt_publisher.is_connected():
-                    logger.warning("MQTT connection lost, will attempt reconnection")
+                    logger.warning("MQTT connection lost; reconnecting")
                     state.mqtt_connected = False
                     state.diagnostic_discovery_published = False  # Reset diagnostic discovery flag
+                    state.mqtt_failure_logged = True
+                    state.mqtt_down_since = time.time()
 
             # Publish diagnostic data if enabled and available
             if config.diagnostic_sensors_enabled and mppt_data.modules:
@@ -249,11 +306,15 @@ def handle_data_polling(
         else:
             logger.debug("MQTT not connected, skipping data publish")
     else:
-        # Failed to read MPPT data, trigger Modbus reconnection
-        logger.warning("Failed to read MPPT data, triggering Modbus reconnection")
+        # Lost contact mid-read: this marks the start of an error condition. Log it
+        # once at WARNING and latch the failure state so the reconnect retries below
+        # stay quiet (DEBUG); recovery is reported once when the connection returns.
+        logger.warning("Lost contact with inverter while reading data; reconnecting")
         state.modbus_connected = False
         state.model_160_verified = False
         state.modbus_retry_count = 0  # Reset so backoff starts fresh from the new failure
+        state.modbus_failure_logged = True
+        state.modbus_down_since = time.time()
 
 
 def calculate_sleep_time(next_poll_time: float, poll_interval: int) -> tuple[float, float]:
