@@ -278,11 +278,9 @@ class TestModbusClient:
         mock_device.connect.assert_called_once()
         assert modbus_client.is_connected() is True
 
-    @patch("sunspec2.modbus.client.SunSpecModbusClientDeviceTCP")
-    def test_disconnect_closes_socket(self, mock_sunspec, modbus_client):
+    def test_disconnect_closes_socket(self, modbus_client):
         """disconnect() must call device.disconnect() (not the no-op close())."""
         mock_device = Mock()
-        mock_sunspec.return_value = mock_device
         modbus_client._device = mock_device
         modbus_client._connected = True
 
