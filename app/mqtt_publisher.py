@@ -225,7 +225,7 @@ class MQTTPublisher:
             section, key, cast = _SLUG_TO_CONFIG[slug]
             try:
                 value = cast(float(payload)) if cast in (int,) else cast(payload)
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 logger.warning("Invalid value for %s: %s", slug, payload)
                 return
 
